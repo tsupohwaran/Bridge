@@ -11,20 +11,21 @@
 # !!!Path must be redefined by users!!!
 #==================================================#
 
-cd("/Users/pohwaran/Doctorate/Paper/DeGlobEnvCost")
-include("Function/DGEC_LoadPkg.jl")
-include("Function/DGEC_Function.jl")
+projPath = "/Users/pohwaran/Doctorate/Paper/Bridge"
+cd(projPath)
+include(projPath * "/code/03_model/load_packages.jl")
+include(projPath * "/code/03_model/functions.jl")
 
 #==================================================#
 # Counterfactual
 #==================================================#
 
 # trade cost and tariff
-@load "data/tariff/tariff_imp_sec_exp_00-21.jld2" τ_00 τ_07 τ_17 τ_19
-@load "data/model/trade_cost_asym.jld2" κʲ_00 κʲ_07 κʲ_17 κʲ_19
+@load "data/model/raw/tariff_imp_sec_exp_00-21.jld2" τ_00 τ_07 τ_17 τ_19
+@load "data/model/raw/trade_cost_asym.jld2" κʲ_00 κʲ_07 κʲ_17 κʲ_19
 
 #### 00-07 ####
-@load "data/model/model_data_raw_00.jld2" inputData vars params
+@load "data/model/raw/model_data_raw_00.jld2" inputData vars params
 inputData, vars, params = SolveModel(inputData, vars, params, ones(size(params.τʲ)), params.τʲ; deficit = true, numer = 2);
 
 # Counterfactual: only tariff change
@@ -59,7 +60,7 @@ changes.dlnw
 # Counterfactual: US trade war 17-19
 #==================================================#
 
-@load "data/model/model_data_raw_17.jld2" inputData vars params
+@load "data/model/raw/model_data_raw_17.jld2" inputData vars params
 inputData, vars, params = SolveModel(inputData, vars, params, ones(size(params.τʲ)), params.τʲ; deficit=true, numer = 2);
 
 # Counterfactual: only tariff change
@@ -83,7 +84,7 @@ _, _, _, changes, check = SolveModel(inputData, vars, params, κ̂ʲ, τʲ′; n
 # 47.3% for China
 #==================================================#
 
-@load "data/model/model_data_17.jld2" inputData vars params
+@load "data/model/processed/model_data_17.jld2" inputData vars params
 
 # Counterfactual: only tariff change
 τʲ′ = copy(params.τʲ); # warning !!! "=" is reference
@@ -91,6 +92,4 @@ _, _, _, changes, check = SolveModel(inputData, vars, params, κ̂ʲ, τʲ′; n
 κ̂ʲ_tariff = (1 .+ τʲ′) ./ (1 .+ params.τʲ); # no change for non-trariff trade cost
 κ̂ʲ_tariff[:, 16:end, :] .= 1.0;  # no change for non-trade sectors
 _, _, _, changes, check = SolveModel(inputData, vars, params, κ̂ʲ_tariff, τʲ′; numer = 2);
-
-
 

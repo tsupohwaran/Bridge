@@ -9,11 +9,7 @@
 *!!! need change to your path !!!*
 clear all
 global proj_path = "/Users/pohwaran/Doctorate/Paper/Bridge"
-global firm_data_path = "$proj_path/data"
-global ctsd_data_path = "$firm_data_path/raw/ctsd"
-global geo_data_path = "$proj_path/data/raw/geo"
-global temp_path = "$firm_data_path/temp"
-global processed_path = "$firm_data_path/processed"
+do "$proj_path/code/00_setup/data_paths.do"
 
 *==================================================*
 * Step 1: prepare data
@@ -25,7 +21,7 @@ local keepvars "sdid year industry main_business_revenue main_business_cost outp
 local keepvars_noexport "sdid year industry main_business_revenue main_business_cost output_vat employ_avg security_total wage_total depreciation fixed_assets_original_val ownership"
 
 forv year = 2007/2020 {
-    use "$ctsd_data_path/ctsd_`year'.dta", clear
+    use "$ctsd_raw_path/ctsd_`year'.dta", clear
     
     qui if `year' == 2007 {
         ren (i17 p133 p136 v6 m309 m290 m288 b261 m298 r41 i1) ///
@@ -85,29 +81,29 @@ forv year = 2007/2020 {
     }
     
     destring ownership, replace force
-    save "$temp_path/ctsd_`year'.dta", replace
+    save "$ctsd_temp_path/ctsd_`year'.dta", replace
 }
 
 * append data from 2007 to 2020
-use "$temp_path/ctsd_2007.dta", replace
+use "$ctsd_temp_path/ctsd_2007.dta", replace
 forv year = 2008/2020 {
-    qui append using "$temp_path/ctsd_`year'.dta"
+    qui append using "$ctsd_temp_path/ctsd_`year'.dta"
     di "Appended year `year'"
 }
 forv year = 2007/2020 {
-    erase "$temp_path/ctsd_`year'.dta"
+    erase "$ctsd_temp_path/ctsd_`year'.dta"
 }
-merge 1:1 sdid using "$ctsd_data_path/ctsd_basic_info_07_20.dta", nogen
+merge 1:1 sdid using "$ctsd_raw_path/ctsd_basic_info_07_20.dta", nogen
 ren (法人代码 企业名称) (id firm_name)
 order id firm_name year
 
-save "$temp_path/ctsd_07_20.dta", replace
+save "$ctsd_temp_path/ctsd_07_20.dta", replace
 
 *==================================================*
 * Step 2: define firm identifier, unify open year and sector, keep manufacturing firms
 *==================================================*
 
-use "$temp_path/ctsd_07_20.dta", clear
+use "$ctsd_temp_path/ctsd_07_20.dta", clear
 
 * drop observations with negative or missing key variables
 foreach var of varlist fixed_assets_original_val - output_vat {
@@ -186,7 +182,7 @@ drop open_year_mod
 gen ind_code1 = substr(industry, 1, 1)
 gen ind_code4 = substr(industry, 2, 4)
 gen ind_code11 = ind_code4 if year >= 2011
-merge m:1 ind_code11 using "$processed_path/ind_code_convert_2011_to_2002.dta", keep(1 3) nogen
+merge m:1 ind_code11 using "$ctsd_raw_path/ind_code_convert_2011_to_2002.dta", keep(1 3) nogen
 replace ind_code4 = ind_code02 if ind_code02 != ""
 gen ind_code2 = substr(ind_code4, 1, 2)
 destring ind_code2, replace
@@ -202,21 +198,21 @@ drop ind_code2_mode ind_code1_mode ind_code11 ind_code02
 * Source: https://www.stats.gov.cn/sj/tjbz/gjtjbz/202302/t20230213_1902746.html
 replace ownership = 200 if ownership == 2
 replace ownership = 110 if ownership == float(110.1)
-merge m:1 ownership using "$processed_path/FirmType.dta", nogen
+merge m:1 ownership using "$model_temp_path/firm_type.dta", nogen
 bys id: egen firm_type_mode = mode(firm_type), minmode
 replace firm_type = firm_type_mode
 drop firm_type_mode
 
 sort id year
 keep if ind_code2 >= 13 & ind_code2 <= 42
-save "$temp_path/ctsd_07_20_Step1.dta", replace
+save "$ctsd_temp_path/ctsd_07_20_step1.dta", replace
 
 *==================================================*
 * Step 2: Gross output (revenue)
 * revenue = operating revenue + sales tax
 *==================================================*
 
-use "$temp_path/ctsd_07_20_Step1.dta", clear
+use "$ctsd_temp_path/ctsd_07_20_step1.dta", clear
 
 * use main business revenue + sales tax as revenue
 replace main_business_revenue = . if (main_business_revenue <= 0)
@@ -225,10 +221,10 @@ gen revenue = main_business_revenue + output_vat
 
 * merge output deflator (PPI) using output price index (2007 = 100)
 ren ind_code2 cic2
-merge m:1 cic2 year using "$processed_path/Index.dta", keep(3) nogen
+merge m:1 cic2 year using "$ctsd_raw_path/index.dta", keep(3) nogen
 gen revenue_real = revenue / output_index * 100
 
-save "$temp_path/ctsd_07_20_Step2.dta", replace
+save "$ctsd_temp_path/ctsd_07_20_step2.dta", replace
 
 *==================================================*
 * Step 3: employ_avg and intermidiate inputs
@@ -242,7 +238,7 @@ save "$temp_path/ctsd_07_20_Step2.dta", replace
 * 3. if both are missing, predict security payment using regression
 *==================================================*
 
-use "$temp_path/ctsd_07_20_Step2.dta", clear
+use "$ctsd_temp_path/ctsd_07_20_step2.dta", clear
 
 * employment
 replace employ_avg = . if (employ_avg <= 0)
@@ -261,7 +257,7 @@ replace inter = . if (inter <= 0)
 * intermidiate goods price index is the weighted average of PPI by I-O table
 gen inter_real = inter / inter_index * 100
 
-save "$temp_path/ctsd_07_20_Step3.dta", replace
+save "$ctsd_temp_path/ctsd_07_20_step3.dta", replace
 
 *==================================================*
 * Step 4: real capital stock (perpetual inventory method)
@@ -271,7 +267,7 @@ save "$temp_path/ctsd_07_20_Step3.dta", replace
 * 3. only keep firms entry after 1950
 *==================================================*    
 
-use "$temp_path/ctsd_07_20_Step3.dta", clear
+use "$ctsd_temp_path/ctsd_07_20_step3.dta", clear
 
 * prepare data for capital stock calculation
 keep id year open_year fixed_assets_original_val cic2
@@ -283,11 +279,11 @@ replace fixed_assets_original_val = . if fixed_assets_original_val <= 0
 bys id: egen start_year_temp = min(year) if fixed_assets_original_val != .
 bys id: egen start_year = min(start_year_temp)
 drop start_year_temp
-save "$temp_path/capital_temp.dta", replace
+save "$ctsd_temp_path/capital_temp.dta", replace
 
 * fill the unbalanced panel from each firm's open year to 2020
 * Note: for codes contain local macro, need run together. run line by line will cause error.
-use "$temp_path/capital_temp.dta", clear
+use "$ctsd_temp_path/capital_temp.dta", clear
 preserve
     keep id
     duplicates drop
@@ -306,7 +302,7 @@ cross using `years' // now we get a balanced panel from 1950 to 2020 for all fir
 
 * merge with main data and drop if year < open_year and before 1985
 sort id year
-merge 1:1 id year using "$temp_path/capital_temp.dta", nogen
+merge 1:1 id year using "$ctsd_temp_path/capital_temp.dta", nogen
 sort id open_year
 bys id: replace open_year = open_year[1] if open_year == .
 sort id year
@@ -355,7 +351,7 @@ bys id: replace invest_nomi = capital_nomi_pred if _n == 1 & invest_nomi == . //
 
 * merge with capital price index
 * because capital price index can only be observed from 1991 to 2019, we replace missing index with PPI from 1978 to 1990, 2020 and RPI from 1950 to 1977
-merge m:1 year using "$processed_path/CaptialIndex.dta", nogen keep(3)
+merge m:1 year using "$ctsd_raw_path/capital_index.dta", nogen keep(3)
 replace invest_nomi = invest_nomi / invest_index * 100
 
 * calculate real capital stock using perpetual inventory method
@@ -369,15 +365,15 @@ keep if n == 1 // keep observations the original sample
 keep id year capital_real
 replace capital_real = . if (capital_real <= 0)
 sort id year
-merge 1:1 id year using "$temp_path/ctsd_07_20_Step3.dta", keep(1 3) nogen
+merge 1:1 id year using "$ctsd_temp_path/ctsd_07_20_step3.dta", keep(1 3) nogen
 
-save "$temp_path/ctsd_07_20_Step4.dta", replace
+save "$ctsd_temp_path/ctsd_07_20_step4.dta", replace
 
 *==================================================*
 * Step 5: final merge and save
 *==================================================*
 
-use "$temp_path/ctsd_07_20_Step4.dta", clear
+use "$ctsd_temp_path/ctsd_07_20_step4.dta", clear
 
 * drop some sample with unreasonable values
 drop if missing(revenue_real, capital_real, employ_avg, inter_real)
@@ -425,7 +421,7 @@ replace ind = 12 if cic2 >= 39 & cic2 <= 41 // 电气设备
 drop if cic2 == 42 // other manufacturing sectors
 
 sort ind year
-merge m:1 ind year using "$processed_path/Employ.dta", nogen
+merge m:1 ind year using "$ctsd_raw_path/employment.dta", nogen
 ren emp_ employ
 
 egen firm_id = group(id)
@@ -436,16 +432,16 @@ drop if year_index == . & year_index2 == .
 gduplicates drop id year, force
 sort id year
 
-save "$processed_path/markdown_est_07_20.dta", replace
+save "$regression_temp_path/markdown_est_07_20.dta", replace
 
 * calculate number of observations by sector
-use "$processed_path/markdown_est_07_20.dta", clear
+use "$regression_temp_path/markdown_est_07_20.dta", clear
 bys ind: gen n_firm = _N
 gduplicates drop ind, force
 keep ind ind_name n_firm
 
 * calculate number of observations by sector in qingdao
-merge 1:1 id year using "$processed_path/markdown_est_07_20.dta", keep(3) nogen
+merge 1:1 id year using "$regression_temp_path/markdown_est_07_20.dta", keep(3) nogen
 
 bys ind: gen n_firm = _N
 gduplicates drop ind, force
@@ -455,25 +451,33 @@ keep ind ind_name n_firm
 * Step 6: Sample for regression and model
 *==================================================*
 
-use "$temp_path/ctsd_07_20_Step3.dta", clear
+use "$ctsd_temp_path/ctsd_07_20_step3.dta", clear
 
 * keep firms existing in 2010
 gen if_year_2010 = (year == 2010)
 bys id: egen exist_2010 = max(if_year_2010)
 keep if exist_2010 == 1
 gduplicates drop id year, force
-save "$temp_path/ctsd_07_20_2010exist.dta", replace
+save "$ctsd_temp_path/ctsd_07_20_2010exist.dta", replace
 
 * keep firms in Qingdao
-use "$processed_path/ctsd_location_qingdao_07_20.dta", clear
-keep if 市 == "青岛市"
-ren (经度 纬度 县) (longitude latitude county)
-keep sdid longitude latitude
+capture confirm file "$ctsd_processed_path/ctsd_location_qingdao_07_20.dta"
+if !_rc {
+    use "$ctsd_processed_path/ctsd_location_qingdao_07_20.dta", clear
+    keep if 市 == "青岛市"
+    ren (经度 纬度 县) (longitude latitude county)
+    keep sdid longitude latitude
+}
+else {
+    use "$ctsd_temp_path/ctsd_qingdao_07_20.dta", clear
+    keep sdid longitude latitude
+    gduplicates drop sdid, force
+}
 tempfile location_qingdao
 save `location_qingdao', replace
 
 * merge location info
-use "$temp_path/ctsd_07_20_2010exist.dta", clear
+use "$ctsd_temp_path/ctsd_07_20_2010exist.dta", clear
 merge 1:1 sdid using `location_qingdao', keep(1 3) nogen
 replace longitude = . if year > 2010
 replace latitude = . if year > 2010
@@ -512,13 +516,13 @@ keep id year revenue employ longitude latitude age firm_type export export_bool 
 drop if missing(longitude, latitude)
 
 * regression analsys, employ_avg, longitude, latitude
-save "$temp_path/ctsd_qingdao_07_20.dta", replace
+save "$ctsd_temp_path/ctsd_qingdao_07_20.dta", replace
 
 *==================================================*
 * contain firms with wage but no security
 *==================================================*
 
-use "$temp_path/ctsd_07_20_Step2.dta", clear
+use "$ctsd_temp_path/ctsd_07_20_step2.dta", clear
 
 * employment
 replace employ_avg = . if (employ_avg <= 0)
@@ -537,17 +541,25 @@ gen if_year_2010 = (year == 2010)
 bys id: egen exist_2010 = max(if_year_2010)
 keep if exist_2010 == 1
 gduplicates drop id year, force
-save "$temp_path/ctsd_07_20_2010exist_nosec.dta", replace
+save "$ctsd_temp_path/ctsd_07_20_2010exist_nosec.dta", replace
 
 * keep firms in Qingdao
-use "$processed_path/ctsd_location_qingdao_07_20.dta", clear
-keep if 市 == "青岛市"
-ren (经度 纬度 县) (longitude latitude county)
-keep sdid longitude latitude
+capture confirm file "$ctsd_processed_path/ctsd_location_qingdao_07_20.dta"
+if !_rc {
+    use "$ctsd_processed_path/ctsd_location_qingdao_07_20.dta", clear
+    keep if 市 == "青岛市"
+    ren (经度 纬度 县) (longitude latitude county)
+    keep sdid longitude latitude
+}
+else {
+    use "$ctsd_temp_path/ctsd_qingdao_07_20.dta", clear
+    keep sdid longitude latitude
+    gduplicates drop sdid, force
+}
 save `location_qingdao', replace
 
 * merge location info
-use "$temp_path/ctsd_07_20_2010exist_nosec.dta", clear
+use "$ctsd_temp_path/ctsd_07_20_2010exist_nosec.dta", clear
 merge 1:1 sdid using `location_qingdao', keep(1 3) nogen
 replace longitude = . if year > 2010
 replace latitude = . if year > 2010
@@ -585,4 +597,4 @@ keep id year revenue employ longitude latitude age export_intensity firm_type wa
 drop if missing(longitude, latitude)
 
 * regression analsys, employ_avg, longitude, latitude
-save "$temp_path/ctsd_qingdao_07_20_nosec.dta", replace
+save "$ctsd_temp_path/ctsd_qingdao_07_20_nosec.dta", replace

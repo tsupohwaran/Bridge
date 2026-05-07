@@ -9,19 +9,14 @@
 * set path
 clear all
 global proj_path = "/Users/pohwaran/Doctorate/Paper/Bridge"
-global firm_data_path = "$proj_path/data"
-global temp_path = "$firm_data_path/temp"
-global processed_path = "$firm_data_path/processed"
-global cied_data_path = "$firm_data_path/raw/cied"
-global ctsd_data_path = "$firm_data_path/raw/ctsd"
-global geo_data_path = "$proj_path/data/raw/geo"
+do "$proj_path/code/00_setup/data_paths.do"
 
 *==================================================*
 * Step 1: Data Preparation for Facts Analysis
 *==================================================*
 
-use "$processed_path/regression_qingdao_07_20.dta", clear
-merge 1:1 id year using "$processed_path/result_markdown_est_qingdao_07_20.dta", keep(1 3) nogen
+use "$regression_processed_path/regression_qingdao_07_20.dta", clear
+merge 1:1 id year using "$ctsd_processed_path/result_markdown_est_qingdao_07_20.dta", keep(1 3) nogen
 
 /* preserve
     duplicates drop id, force
@@ -45,23 +40,23 @@ egen town_year = group(town year)
 gen ln_w0 = log(wage_inital)
 gen ln_age = ln(age)
 
-save "$processed_path/regression_qingdao_07_20.dta", replace
+save "$regression_processed_path/regression_qingdao_07_20.dta", replace
 
 
 * merge wage with no security
-use "$processed_path/regression_qingdao_07_20.dta", clear
-merge 1:1 id year using "$temp_path/ctsd_qingdao_07_20_nosec.dta", nogen
+use "$regression_processed_path/regression_qingdao_07_20.dta", clear
+merge 1:1 id year using "$ctsd_temp_path/ctsd_qingdao_07_20_nosec.dta", nogen
 
 * merge with exposure variable
-use "$processed_path/regression_qingdao_07_20.dta", clear
+use "$regression_processed_path/regression_qingdao_07_20.dta", clear
 egen firm_id = group(id)
 xtset firm_id year
 
-merge m:1 id using "$processed_path/firm_exposure_qingdao.dta", nogen keep(3)
+merge m:1 id using "$regression_temp_path/firm_exposure_qingdao.dta", nogen keep(3)
 gen ln_exposure_huangdao = log(exposure_huangdao)
 gen ln_exposure_jimo = log(exposure_jimo)
 
-sort firm_id year 
+sort firm_id year
 gen wage_hat = ln_wage - L.ln_wage
 reg ln_wage ln_exposure_huangdao ln_exposure_jimo if year == 2012 | year == 2013
 reg wage_hat dln_ma ln_exposure_huangdao ln_exposure_jimo if year == 2013
@@ -70,7 +65,7 @@ reg wage_hat dln_ma ln_exposure_huangdao ln_exposure_jimo if year == 2013
 * Step 1: Data Preparation for Facts Analysis
 *==================================================*
 
-use "$processed_path/regression_qingdao_07_20.dta", clear
+use "$regression_processed_path/regression_qingdao_07_20.dta", clear
 global year_choice="2010 2011 2012 2013"
 global control = "i.export_bool#year ftype#year ind_code2#year"
 
@@ -349,4 +344,4 @@ preserve
     a(id year $control) cluster(town_year)
 restore
 
-esttab using "$processed_path/bridge_effect_estimates.csv", b(%12.3fc) se ar2 nogap star(* 0.10 ** 0.05 *** 0.01) replace
+esttab using "$output_table_path/bridge_effect_estimates.csv", b(%12.3fc) se ar2 nogap star(* 0.10 ** 0.05 *** 0.01) replace

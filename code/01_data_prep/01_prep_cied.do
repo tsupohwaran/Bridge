@@ -9,11 +9,7 @@
 * set path
 clear all
 global proj_path = "/Users/pohwaran/Doctorate/Paper/Bridge"
-global firm_data_path = "$proj_path/data"
-global cied_data_path = "$firm_data_path/raw/cied"
-global geo_data_path = "$proj_path/data/raw/geo"
-global temp_path = "$firm_data_path/temp"
-global processed_path = "$firm_data_path/processed"
+do "$proj_path/code/00_setup/data_paths.do"
 
 *==================================================*
 * Step 1: append raw CIED data and keep relevant variables
@@ -22,27 +18,27 @@ global processed_path = "$firm_data_path/processed"
 
 * Load CIED raw data for Qingdao (1998-2014) and filter by city
 forv year = 1998/2014{
-    use "$cied_data_path/cied_`year'.dta", clear
+    use "$cied_raw_path/cied_`year'.dta", clear
     keep if 市 == "青岛市"
-    save "$temp_path/cied_qingdao_`year'_temp.dta", replace
+    save "$cied_temp_path/cied_qingdao_`year'_temp.dta", replace
 }
 
 * Combine all years into single dataset
-use "$temp_path/cied_qingdao_1998_temp.dta", clear
+use "$cied_temp_path/cied_qingdao_1998_temp.dta", clear
 forv year = 1999/2014{
-    append using "$temp_path/cied_qingdao_`year'_temp.dta"
+    append using "$cied_temp_path/cied_qingdao_`year'_temp.dta"
 }
 ren 年份 year
-save "$temp_path/cied_qingdao_98_14.dta", replace
+save "$cied_temp_path/cied_qingdao_98_14.dta", replace
 
 * Remove intermediate year files
 forv year = 1998/2014{
-    erase "$temp_path/cied_qingdao_`year'_temp.dta"
+    erase "$cied_temp_path/cied_qingdao_`year'_temp.dta"
 }
 
 * Standardize industry codes, firm founding year, key variables, and firm type
 * keep only firms in manufacturing sector (code "C")
-use "$temp_path/cied_qingdao_98_14.dta", clear
+use "$cied_temp_path/cied_qingdao_98_14.dta", clear
 bys group: egen ind_code1 = mode(行业门类代码), minmode
 keep if ind_code1 == "C"
 
@@ -95,15 +91,14 @@ drop if missing(longitude, latitude)
 keep if year >= 2007
 
 * merge town info based on firm coordinates
-geoinpoly latitude longitude using "$geo_data_path/shapefiles/town_coord.dta"
+geoinpoly latitude longitude using "$geo_raw_path/shapefiles/town_coord.dta"
 ren _ID ID
-merge m:1 ID using "$geo_data_path/shapefiles/town_db.dta", nogen
+merge m:1 ID using "$geo_raw_path/shapefiles/town_db.dta", nogen
 ren 乡 town
 drop ID - 市 treat 县
 
 sort group year
-save "$temp_path/cied_qingdao_07_14.dta", replace
+save "$cied_temp_path/cied_qingdao_07_14.dta", replace
 
 keep if year == 2011
-save "$temp_path/firm_cied_qingdao.dta", replace
-
+save "$ctsd_processed_path/firm_cied_qingdao.dta", replace

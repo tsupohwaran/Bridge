@@ -11,19 +11,40 @@ from pathlib import Path
 # Path Configuration
 
 Current_Dir = Path.cwd()
-WORK_DIR = Current_Dir / "data/raw/geo"
+GEO_RAW_DIR = Current_Dir / "data/geo/raw"
+GEO_TEMP_DIR = Current_Dir / "data/geo/temp"
+GEO_PROCESSED_DIR = Current_Dir / "data/geo/processed"
+
+WORK_DIR = GEO_RAW_DIR
 RAW_GRAPH_NAME = "osm_qingdao.graphml"  # Clean road network (no speed, no modification)
 
 # Selected road segment ID file (exported from QGIS as CSV)
-BRIDGE_ID_FILE = Current_Dir / "data/raw/geo/bridge_selected.csv" 
+BRIDGE_ID_FILE = GEO_RAW_DIR / "bridge_selected.csv"
 
 # Input data
-FIRM_PATH = Current_Dir / "data/raw/geo/firm_list_qingdao_model.xlsx"
-GOV_PATH  = Current_Dir / "data/raw/geo/govern_qingdao.xlsx"
+GOV_PATH = GEO_RAW_DIR / "govern_qingdao.xlsx"
 
 # Output files
-OUTPUT_WITH_BRIDGE = Current_Dir / "data/processed/commute_time_model.csv"
-OUTPUT_NO_BRIDGE   = Current_Dir / "data/processed/commute_time_no_bridge_model.csv" 
+FIRM_SCENARIOS = [
+    {
+        "name": "nosec",
+        "firm_path": GEO_TEMP_DIR / "firm_qingdao.xlsx",
+        "with_bridge": GEO_PROCESSED_DIR / "commute_time_qingdao_python.csv",
+        "no_bridge": GEO_PROCESSED_DIR / "commute_time_no_bridge_qingdao_python.csv",
+    },
+    {
+        "name": "model",
+        "firm_path": GEO_TEMP_DIR / "firm_list_qingdao_model.xlsx",
+        "with_bridge": GEO_PROCESSED_DIR / "commute_time_qingdao_model_python.csv",
+        "no_bridge": GEO_PROCESSED_DIR / "commute_time_no_bridge_qingdao_model_python.csv",
+    },
+    {
+        "name": "07_20",
+        "firm_path": GEO_RAW_DIR / "firm_qingdao_07_20.xlsx",
+        "with_bridge": GEO_PROCESSED_DIR / "commute_time_qingdao_07_20_python.csv",
+        "no_bridge": GEO_PROCESSED_DIR / "commute_time_no_bridge_qingdao_07_20_python.csv",
+    },
+]
 
 # Location
 PLACE_NAME = "Qingdao, China"
@@ -327,6 +348,7 @@ def run_pandana_calc(nodes, edges, time_col, firms, govs, outfile, remove_mask=N
     
     df.loc[df['travel_time_sec'] > 1e6, 'travel_time_sec'] = np.nan
     df['travel_time_min'] = (df['travel_time_sec'] / 60).round(2)
+    Path(outfile).parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(str(outfile), index=False)
     print(f"   ✅ Complete: {outfile}")
 
@@ -359,27 +381,31 @@ def main():
     edges, bridge_mask = prepare_scenarios_by_id(edges, target_ids)
     
     # --- Step 4: Run calculations ---
-    # Read Excel files and convert to GeoDataFrame
-    df_firms = pd.read_excel(str(FIRM_PATH))
-    df_govs  = pd.read_excel(str(GOV_PATH))
-    
-    # Create GeoDataFrame from latitude and longitude
-    gdf_firms = gpd.GeoDataFrame(
-        df_firms, 
-        geometry=gpd.points_from_xy(df_firms['longitude'], df_firms['latitude']),
-        crs="EPSG:4326"
-    )
+    df_govs = pd.read_excel(str(GOV_PATH))
     gdf_govs = gpd.GeoDataFrame(
         df_govs,
         geometry=gpd.points_from_xy(df_govs['longitude'], df_govs['latitude']),
         crs="EPSG:4326"
     )
-    
-    # Scenario A: With bridges (use complete road network)
-    run_pandana_calc(nodes, edges, 'time_scenario_A', gdf_firms, gdf_govs, OUTPUT_WITH_BRIDGE, remove_mask=None)
-    
-    # Scenario B: No bridges (remove bridge/tunnel road segments)
-    run_pandana_calc(nodes, edges, 'time_scenario_A', gdf_firms, gdf_govs, OUTPUT_NO_BRIDGE, remove_mask=bridge_mask)
+
+    for scenario in FIRM_SCENARIOS:
+        if not scenario["firm_path"].exists():
+            print(f"\n4. Skipping firm sample '{scenario['name']}' because {scenario['firm_path']} does not exist.")
+            continue
+
+        print(f"\n4. Running firm sample: {scenario['name']}")
+        df_firms = pd.read_excel(str(scenario["firm_path"]))
+        gdf_firms = gpd.GeoDataFrame(
+            df_firms,
+            geometry=gpd.points_from_xy(df_firms['longitude'], df_firms['latitude']),
+            crs="EPSG:4326"
+        )
+
+        # Scenario A: With bridges (use complete road network)
+        run_pandana_calc(nodes, edges, 'time_scenario_A', gdf_firms, gdf_govs, scenario["with_bridge"], remove_mask=None)
+
+        # Scenario B: No bridges (remove bridge/tunnel road segments)
+        run_pandana_calc(nodes, edges, 'time_scenario_A', gdf_firms, gdf_govs, scenario["no_bridge"], remove_mask=bridge_mask)
 
 if __name__ == "__main__":
     main()

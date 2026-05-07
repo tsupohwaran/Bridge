@@ -9,20 +9,15 @@
 * set path
 clear all
 global proj_path = "/Users/pohwaran/Doctorate/Paper/Bridge"
-global firm_data_path = "$proj_path/data"
-global temp_path = "$firm_data_path/temp"
-global processed_path = "$firm_data_path/processed"
-global cied_data_path = "$firm_data_path/raw/cied"
-global ctsd_data_path = "$firm_data_path/raw/ctsd"
-global geo_data_path = "$proj_path/data/raw/geo"
+do "$proj_path/code/00_setup/data_paths.do"
 
 *==================================================*
 * step 1: Model Sample Preparation (CTSD + CIED)
 *==================================================*
 
 * prepare CTSD data for year 2010
-use "$processed_path/match_cied_ctsd_07_14.dta", clear
-merge m:1 sdid using "$temp_path/ctsd_qingdao_07_20_nosec.dta", keep(2 3) nogen
+use "$regression_temp_path/match_cied_ctsd_07_14.dta", clear
+merge m:1 sdid using "$ctsd_temp_path/ctsd_qingdao_07_20_nosec.dta", keep(2 3) nogen
 * drop if missing(revenue, employ)
 drop if missing(wage_inital)
 
@@ -30,7 +25,7 @@ gen index = 1 if !missing(group) // mark matched firms
 keep if year == 2010
 
 * prepare CIED data for year 2011
-append using "$temp_path/firm_cied_qingdao.dta"
+append using "$ctsd_processed_path/firm_cied_qingdao.dta"
 bys group: gen n = _N
 drop if (n == 2) & missing(index)
 drop n index
@@ -59,29 +54,29 @@ drop if missing(z)
 keep id longitude latitude wage_inital
 
 * merge town info based on firm coordinates
-geoinpoly latitude longitude using "$geo_data_path/shapefiles/town_coord.dta"
+geoinpoly latitude longitude using "$geo_raw_path/shapefiles/town_coord.dta"
 ren _ID ID
-merge m:1 ID using "$geo_data_path/shapefiles/town_db.dta", nogen
+merge m:1 ID using "$geo_raw_path/shapefiles/town_db.dta", nogen
 ren (乡 县) (town county)
 drop ID 省 市 treat geom
 
 * export final firm data
 sort id
-save "$processed_path/firm_qingdao.dta", replace
-export excel using "$geo_data_path/firm_qingdao.xlsx", firstrow(variables) replace
+save "$model_temp_path/firm_qingdao.dta", replace
+export excel using "$geo_temp_path/firm_qingdao.xlsx", firstrow(variables) replace
 
 *==================================================*
 * Step 2: Regression Sample Preparation (CTSD + CIED)
 *==================================================*
 
 * prepare CTSD data for year 2007-2020
-use "$processed_path/match_cied_ctsd_07_14.dta", clear
-merge m:1 sdid using "$temp_path/ctsd_qingdao_07_20.dta", keep(2 3) nogen
+use "$regression_temp_path/match_cied_ctsd_07_14.dta", clear
+merge m:1 sdid using "$ctsd_temp_path/ctsd_qingdao_07_20.dta", keep(2 3) nogen
 drop if missing(export_bool, firm_type, ind_code2)
 gen index = 1 if !missing(group)
 
 * prepare CIED data for year 2007-2014
-append using "$temp_path/cied_qingdao_07_14.dta"
+append using "$cied_temp_path/cied_qingdao_07_14.dta"
 bys group year: gen n = _N
 drop if (n == 2) & missing(index) // drop repeated observations
 drop n index
@@ -98,37 +93,37 @@ drop if n == 1
 
 * merge town info based on firm coordinates
 drop county town
-geoinpoly latitude longitude using "$geo_data_path/shapefiles/town_coord.dta"
+geoinpoly latitude longitude using "$geo_raw_path/shapefiles/town_coord.dta"
 ren _ID ID
-merge m:1 ID using "$geo_data_path/shapefiles/town_db.dta", nogen
+merge m:1 ID using "$geo_raw_path/shapefiles/town_db.dta", nogen
 ren (乡 县) (town county)
 drop ID 省 市 treat geom
 
 sort id year
 drop 年份 - 企业名称 n
-save "$processed_path/firm_qingdao_07_20.dta", replace
+save "$regression_temp_path/firm_qingdao_07_20_nosec.dta", replace
 
 duplicates drop id, force
 sort id
 keep id longitude latitude county
-export excel using "$geo_data_path/firm_qingdao_07_20.xlsx", firstrow(variables) replace
+export excel using "$geo_raw_path/firm_qingdao_07_20.xlsx", firstrow(variables) replace
 
 *==================================================*
 * Step 3: Government_QingDao.dta Preparation
 *==================================================*
 
-use "$geo_data_path/town_gov_coords_2023.dta", clear
+use "$geo_raw_path/town_gov_coords_2023.dta", clear
 keep if city == "青岛市"
 keep town 纬度 经度
 ren (纬度 经度) (latitude longitude)
 sort town
-export excel using "$geo_data_path/govern_qingdao.xlsx", firstrow(variables) replace
+export excel using "$geo_raw_path/govern_qingdao.xlsx", firstrow(variables) replace
 
 *==================================================*
 * Step 4: Population Data Preparation
 *==================================================*
 
-import excel "$geo_data_path/pop_census_qingdao_2010.xlsx", sheet("Sheet2") firstrow clear
+import excel "$geo_processed_path/pop_census_qingdao_2010.xlsx", sheet("Sheet2") firstrow clear
 bys town: egen pop = sum(I) // 15-64 population
 duplicates drop town, force
 
@@ -141,7 +136,7 @@ replace pop = pop + `split_pop' if town == "隐珠街道"
 replace pop = pop + `split_pop' if town == "铁山街道"
 keep town pop
 
-save "$processed_path/pop_census_qingdao_2010.dta", replace
+save "$geo_processed_path/pop_census_qingdao_2010.dta", replace
 
 *==================================================*
 * Step 5: Market Access Calculation (Python)
@@ -156,12 +151,12 @@ python script "$proj_path/code/01_data_prep/03_market_access_func.py"
 *==================================================*
 
 foreach suffix in "" "_07_20" {
-    import delimited "$processed_path/commute_time_qingdao`suffix'_python.csv", clear
+    import delimited "$geo_processed_path/commute_time_qingdao`suffix'_python.csv", clear
     keep firm_id town_id travel_time_min
     ren (firm_id town_id travel_time_min) (id town dzj_prime)
     tempfile market_access
     save `market_access', replace
-    import delimited "$processed_path/commute_time_no_bridge_qingdao`suffix'_python.csv", clear
+    import delimited "$geo_processed_path/commute_time_no_bridge_qingdao`suffix'_python.csv", clear
     keep firm_id town_id travel_time_min
     ren (firm_id town_id travel_time_min) (id town dzj)
     merge 1:1 id town using `market_access', nogen
@@ -185,7 +180,7 @@ foreach suffix in "" "_07_20" {
     replace town = "中韩街道" if town == "金家岭街道"
     replace town = "" if town == "金湖路街道"
     replace town = "平度外向型工业加工区" if town == "平度经济开发区"
-    merge m:1 town using "$processed_path/pop_census_qingdao_2010", keep(3) nogen
+    merge m:1 town using "$geo_processed_path/pop_census_qingdao_2010", keep(3) nogen
     drop if missing(dzj, dzj_prime)
 
     gduplicates drop id town, force
@@ -194,9 +189,9 @@ foreach suffix in "" "_07_20" {
     drop n
 
     if "`suffix'" == "" {
-        merge m:1 id using "$processed_path/firm_qingdao.dta", keep(3) nogen
+        merge m:1 id using "$model_temp_path/firm_qingdao.dta", keep(3) nogen
         sort id town
-        save "$processed_path/firm_info.dta", replace
+        save "$model_processed_path/firm_info.dta", replace
     }
     else {
         bys id: egen dma = wtmean(dzj - dzj_prime), weight(pop)
@@ -206,20 +201,20 @@ foreach suffix in "" "_07_20" {
         tempfile market_access
         save `market_access', replace
 
-        use "$processed_path/firm_qingdao_07_20.dta", clear
+        use "$regression_temp_path/firm_qingdao_07_20_nosec.dta", clear
         merge m:1 id using `market_access', keep(3) nogen
 
-        save "$processed_path/regression_qingdao_07_20_nosec.dta", replace
+        save "$regression_processed_path/regression_qingdao_07_20_nosec.dta", replace
     }
 }
 
-use "$processed_path/regression_qingdao_07_20_nosec.dta", clear
+use "$regression_processed_path/regression_qingdao_07_20_nosec.dta", clear
 ren (wage_total wage_inital) (wage_total_no_security wage_inital_no_security)
-merge 1:1 id year using "$processed_path/regression_qingdao_07_20.dta"
+merge 1:1 id year using "$regression_processed_path/regression_qingdao_07_20.dta"
 
 order id year sdid gqid group wage_total_no_security wage_inital_no_security wage_total wage_inital
 label variable wage_inital_no_security "初始工资（不含社保）"
 label variable wage_total "工资总额（含社保）"
 label variable wage_inital "初始工资（含社保）"
 
-save "$processed_path/regression_qingdao_07_20.dta", replace
+save "$regression_processed_path/regression_qingdao_07_20.dta", replace

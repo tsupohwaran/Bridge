@@ -1,12 +1,6 @@
 clear all
 global proj_path = "/Users/pohwaran/Doctorate/Paper/Bridge"
-global firm_data_path = "$proj_path/data"
-global temp_path = "$firm_data_path/temp"
-global processed_path = "$firm_data_path/processed"
-global cied_data_path = "$firm_data_path/raw/cied"
-global ctsd_data_path = "$firm_data_path/raw/ctsd"
-global geo_data_path = "$proj_path/data/raw/geo"
-global busin_data_path = "$proj_path/data/raw/busin"
+do "$proj_path/code/00_setup/data_paths.do"
 
 * 这段代码的目标是构造企业层面的 exposure 指标。
 * 直观上，exposure 衡量的是：某个企业在“通桥”情形下，
@@ -30,9 +24,9 @@ append using "$busin_data_path/BusinRegis_QingDao_12.dta"
 ren (经度 纬度) (longitude latitude)
 
 * 将企业注册点按经纬度落到镇级多边形中，识别每家企业所在的镇。
-geoinpoly latitude longitude using "$geo_data_path/shapefiles/town_coord.dta"
+geoinpoly latitude longitude using "$geo_raw_path/shapefiles/town_coord.dta"
 ren _ID ID
-merge m:1 ID using "$geo_data_path/shapefiles/town_db.dta", nogen
+merge m:1 ID using "$geo_raw_path/shapefiles/town_db.dta", nogen
 ren (乡 县) (town county)
 drop ID 省 市 treat geom
 
@@ -54,21 +48,21 @@ gen new_entry_firm_num = firm_num2013 - firm_num2012
 
 * 去掉无法计算新增量或新增量为负的镇。
 drop if missing(new_entry_firm_num) | new_entry_firm_num < 0
-save "$processed_path/new_entry_firm_2013.dta", replace
+save "$regression_temp_path/new_entry_firm_2013.dta", replace
 
 * 第二步：把企业到镇的通勤时间，与镇级新增企业数合并起来，计算 exposure。
 *
 * commute_time_qingdao_07_20_python.csv 中，每一行表示：
 * 某家企业 id 到某个镇 town 的通勤时间 dzj_prime（单位：分钟）。
 * 这里使用的是通桥情形下的 travel_time_min。
-import delimited "$processed_path/commute_time_qingdao_07_20_python.csv", clear
+import delimited "$geo_processed_path/commute_time_qingdao_07_20_python.csv", clear
 keep firm_id town_id travel_time_min
 ren (firm_id town_id travel_time_min) (id town dzj_prime)
 
 * 将每个镇对应的新增企业数和所属县区 merge 进来。
 * merge 之后，一行数据可以理解为：
 * “企业 i 到镇 j 的通勤时间” + “镇 j 属于哪个区” + “镇 j 的新增企业数量是多少”。
-merge m:1 town using "$processed_path/new_entry_firm_2013.dta", keep(3) nogen
+merge m:1 town using "$regression_temp_path/new_entry_firm_2013.dta", keep(3) nogen
 
 sort id town
 
@@ -97,5 +91,4 @@ ren (exposure黄岛区 exposure即墨区) (exposure_huangdao exposure_jimo)
 * exposure_jimo     = 企业对即墨区新增企业活动的暴露度
 replace exposure_huangdao = 100 / exposure_huangdao
 replace exposure_jimo = 100 / exposure_jimo
-save "$processed_path/firm_exposure_qingdao.dta", replace
-
+save "$regression_temp_path/firm_exposure_qingdao.dta", replace

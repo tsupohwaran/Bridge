@@ -47,7 +47,7 @@ RunStata(projPath, stataPath, "code/02_empirical/bridge_effect.do")
 # Load data
 #==================================================#
 
-df = DataFrame(load(projPath * "/data/processed/firm_info.dta"));
+df = DataFrame(load(projPath * "/data/model/processed/firm_qingdao_model.dta"));
 l = df[!, :pop] |> x -> Float64.(x) |> x -> reshape(x, Z, J) |> x -> x[:, 1] |> x -> x ./ sum(x); # normalize total population to 1
 lⱼ_data = df[!, :employ] |> x -> Float64.(x) |> x -> reshape(x, Z, J) |> x -> x[1, :] |> x -> x ./ sum(x);
 d = reshape(Float64.(df[!, :dzj]), Z, J) |> x -> replace(x, 0.0 => 1e-2);
