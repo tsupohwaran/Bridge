@@ -1,0 +1,1066 @@
+#LyX 2.4 created this file. For more info see https://www.lyx.org/
+\lyxformat 620
+\begin_document
+\begin_header
+\save_transient_properties true
+\origin unavailable
+\textclass ctex-article
+\use_default_options true
+\maintain_unincluded_children no
+\language chinese-simplified
+\language_package default
+\inputencoding utf8
+\fontencoding auto
+\font_roman "default" "default"
+\font_sans "default" "default"
+\font_typewriter "default" "default"
+\font_math "auto" "auto"
+\font_default_family default
+\use_non_tex_fonts true
+\font_sc false
+\font_roman_osf false
+\font_sans_osf false
+\font_typewriter_osf false
+\font_sf_scale 100 100
+\font_tt_scale 100 100
+\use_microtype false
+\use_dash_ligatures true
+\graphics default
+\default_output_format default
+\output_sync 0
+\bibtex_command default
+\index_command default
+\float_placement class
+\float_alignment class
+\paperfontsize default
+\spacing single
+\use_hyperref false
+\papersize default
+\use_geometry false
+\use_package amsmath 1
+\use_package amssymb 1
+\use_package cancel 1
+\use_package esint 1
+\use_package mathdots 1
+\use_package mathtools 1
+\use_package mhchem 1
+\use_package stackrel 1
+\use_package stmaryrd 1
+\use_package undertilde 1
+\cite_engine basic
+\cite_engine_type default
+\biblio_style plain
+\use_bibtopic false
+\use_indices false
+\paperorientation portrait
+\suppress_date false
+\justification true
+\use_refstyle 1
+\use_formatted_ref 0
+\use_minted 0
+\use_lineno 0
+\index Index
+\shortcut idx
+\color #008000
+\end_index
+\secnumdepth 3
+\tocdepth 3
+\paragraph_separation indent
+\paragraph_indentation default
+\is_math_indent 0
+\math_numbering_side default
+\quotes_style english
+\dynamic_quotes 0
+\papercolumns 1
+\papersides 1
+\paperpagestyle default
+\tablestyle default
+\tracking_changes false
+\output_changes false
+\change_bars false
+\postpone_fragile_content true
+\html_math_output 0
+\html_css_as_file 0
+\html_be_strict false
+\docbook_table_output 0
+\docbook_mathml_prefix 1
+\end_header
+
+\begin_body
+
+\begin_layout Section*
+1.
+ Worker
+\end_layout
+
+\begin_layout Subsection*
+1.1 偏好
+\end_layout
+
+\begin_layout Standard
+选择企业
+\begin_inset Formula $j$
+\end_inset
+
+工作、
+\begin_inset Formula $z$
+\end_inset
+
+地居住（不移动）的员工
+\begin_inset Formula $i$
+\end_inset
+
+的间接效用为：
+
+\begin_inset Formula 
+\[
+U_{izj}=\ln w_{j}-\eta_{j}\ln d_{zj}+\frac{1}{\theta}\epsilon_{ij}
+\]
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+其中，
+
+\begin_inset Formula $w_{j}$
+\end_inset
+
+为工资，
+员工与企业的通勤时间为
+\begin_inset Formula $d_{zj}$
+\end_inset
+
+；
+
+\begin_inset Formula $\eta$
+\end_inset
+
+为“工资-通勤弹性”，
+反映了员工愿意以1%的通勤时间换%多少的工资；
+
+\begin_inset Formula $\epsilon_{ij}$
+\end_inset
+
+为偏好冲击，
+服从多元Gumbel分布：
+
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula 
+\[
+F\text{(\epsilon_{i1},\epsilon_{i2},...,\epsilon_{ij})=exp\left\{  -\sum_{s\in S}\left\{  \sum_{j\in J(s)}e^{-\frac{\epsilon_{ij}}{\sigma}}\right\}  ^{\sigma}\right\}  }
+\]
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+其中，
+
+\begin_inset Formula $s$
+\end_inset
+
+为街道（乡镇）；
+
+\begin_inset Formula $\sigma$
+\end_inset
+
+为同一街道企业之间偏好冲击的相关性。
+
+\end_layout
+
+\begin_layout Standard
+
+\series bold
+性质1：
+
+\series default
+
+\begin_inset Formula $\sigma\approx\sqrt{1-Corr\left(\epsilon_{ij},\epsilon_{ij\prime}\right)}$
+\end_inset
+
+。
+当
+\begin_inset Formula $\sigma\rightarrow0$
+\end_inset
+
+时，
+ 企业间完全替代；
+当
+\begin_inset Formula $\sigma\rightarrow1$
+\end_inset
+
+时，
+等价于idiosyncratic shock
+\end_layout
+
+\begin_layout Standard
+
+\series bold
+性质2：
+
+\series default
+Nested Logit等价于Nested CES，
+街道之间的替代弹性
+\begin_inset Formula $\eta\prime=\frac{\theta}{\sigma}-1$
+\end_inset
+
+，
+企业间替代弹性
+\begin_inset Formula $\theta\prime=\theta-1$
+\end_inset
+
+
+\end_layout
+
+\begin_layout Subsection*
+1.2 劳动力供给
+\end_layout
+
+\begin_layout Standard
+员工选择使自身效用最大化的企业
+\begin_inset Formula $j$
+\end_inset
+
+工作，
+结合性质，
+可以得到
+\begin_inset Formula $z$
+\end_inset
+
+地区去企业
+\begin_inset Formula $j\in J(s)$
+\end_inset
+
+工作的工人比例
+\begin_inset Formula $\pi_{zj}$
+\end_inset
+
+为：
+
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula 
+\[
+\pi_{zj}=\pi_{zs}\underbrace{\frac{\left(w_{j}d_{zj}^{-\eta}\right)^{\frac{\theta}{\sigma}}}{\sum_{j\prime\in J(s)}\left(w_{j\prime}d_{zj\prime}^{-\eta}\right)^{\frac{\theta}{\sigma}}}}_{\pi_{zj\mid s}}
+\]
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula 
+\[
+\pi_{zs}=\frac{\left\{ \sum_{j\prime\in J(s)}\left(w_{j\prime}d_{zj\prime}^{-\eta}\right)^{\frac{\theta}{\sigma}}\right\} ^{\sigma}}{\sum_{s\prime}\left\{ \sum_{j\in J(s\prime)}\left(w_{j\prime}d_{zj\prime}^{-\eta}\right)^{\frac{\theta}{\sigma}}\right\} ^{\sigma}}
+\]
+
+\end_inset
+
+ 
+\end_layout
+
+\begin_layout Standard
+其中，
+
+\begin_inset Formula $\pi_{zs}$
+\end_inset
+
+表示
+\begin_inset Formula $z$
+\end_inset
+
+地区工人去街道
+\begin_inset Formula $s$
+\end_inset
+
+工作的比例；
+
+\begin_inset Formula $\pi_{zj\mid s}$
+\end_inset
+
+表示给定工人去街道
+\begin_inset Formula $s$
+\end_inset
+
+，
+居住在
+\begin_inset Formula $z$
+\end_inset
+
+地区的工人去企业
+\begin_inset Formula $j\in J(s)$
+\end_inset
+
+工作的比例。
+
+\end_layout
+
+\begin_layout Standard
+因此，
+居住在地区
+\begin_inset Formula $z$
+\end_inset
+
+且去企业
+\begin_inset Formula $j$
+\end_inset
+
+的工人的劳动力供给弹性
+\begin_inset Formula $\varepsilon_{zj}$
+\end_inset
+
+为：
+
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula 
+\[
+\varepsilon_{zj}:=\frac{\partial\ln\pi_{zj}}{\partial\ln w_{j}}=\theta\left[\frac{1}{\sigma}+\left(1-\frac{1}{\sigma}\right)\pi_{zj\mid s}-\pi_{zj}\right]
+\]
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula 
+\[
+\pi_{zj}\in\text{(0,1)}
+\]
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+
+\series bold
+推论1：
+
+\series default
+当
+\begin_inset Formula $\sigma\rightarrow1$
+\end_inset
+
+时，
+有
+\begin_inset Formula $\varepsilon_{zj}\rightarrow\theta\left(1-\pi_{zj}\right)$
+\end_inset
+
+。
+即，
+如果企业
+\begin_inset Formula $j$
+\end_inset
+
+在劳动力市场
+\begin_inset Formula $z$
+\end_inset
+
+的份额高，
+那么面临该劳动力市场
+\begin_inset Formula $z$
+\end_inset
+
+的弹性小。
+
+\end_layout
+
+\begin_layout Standard
+
+\series bold
+推论2
+\series default
+：
+
+\begin_inset Formula $\forall z,\varepsilon_{zj}<\varepsilon_{zj\prime},if\ prod_{j}>prod_{j\prime}$
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+
+\series bold
+推论3：
+
+\series default
+当
+\begin_inset Formula $\theta\rightarrow\infty$
+\end_inset
+
+时（
+\begin_inset Formula $\epsilon_{ij}$
+\end_inset
+
+离散程度极小），
+工人对企业的偏好几乎不再有随机性，
+几乎只会确定性地选择最优的某个企业供给劳动力，
+
+\begin_inset Formula $\varepsilon_{zj}\rightarrow\infty$
+\end_inset
+
+。
+
+\end_layout
+
+\begin_layout Standard
+
+\series bold
+推论4（经济学含义同Berger）：
+
+\series default
+
+\begin_inset Formula $d_{zj}\propto\varepsilon_{zj}$
+\end_inset
+
+。
+
+\end_layout
+
+\begin_layout Section*
+2.
+ Firm
+\end_layout
+
+\begin_layout Standard
+企业位置外生给定，
+不同企业的产品在市场上完全替代（产品价格标准化为1），
+在劳动力市场具有垄断力量，
+但只能观测到平均劳动力供给弹性（不能对来自不同地方的工人实行工资歧视），
+需要选择最优的工资以实现成本最小化：
+
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula 
+\[
+\begin{array}{c}
+\min_{w_{j}}w_{j}l_{j}\\
+s.t.\quad Y_{j}\left(l_{j}\right)=z_{j}l_{j}^{\alpha}\geq Q_{j}\\
+w_{j}\geq0\\
+0<\alpha\leq1
+\end{array}
+\]
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+可以推导出，
+企业面临的平均劳动力供给弹性为个人劳动力供给弹性
+\begin_inset Formula $\varepsilon_{zj}$
+\end_inset
+
+的加权平均：
+
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula 
+\[
+\varepsilon_{j}=\sum_{z\in Z}\gamma_{zj}\varepsilon_{zj}
+\]
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula 
+\[
+\frac{MPL_{j}}{w_{j}}=1+\varepsilon_{j}^{-1}
+\]
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+其中，
+
+\begin_inset Formula $\gamma_{zj}:=\frac{\pi_{zj}l_{z}}{\sum_{z\prime}\pi_{z\prime j}l_{z\prime}}$
+\end_inset
+
+表示
+\begin_inset Formula $z$
+\end_inset
+
+地区员工占企业
+\begin_inset Formula $j$
+\end_inset
+
+总员工数量的比例。
+
+\end_layout
+
+\begin_layout Standard
+
+\series bold
+推论1：
+
+\series default
+如果企业的员工大部分都来自较远的地区（
+\begin_inset Formula $\gamma_{zj}$
+\end_inset
+
+大），
+
+\begin_inset Formula $\varepsilon_{zj}=\theta\left(1-\pi_{zj}\right)$
+\end_inset
+
+则劳动力供给弹性
+\begin_inset Formula $\varepsilon_{j}$
+\end_inset
+
+大，
+劳动力市场垄断力量小（markdown小）。
+
+\end_layout
+
+\begin_layout Standard
+
+\series bold
+\color red
+推论
+\color inherit
+2：
+
+\series default
+如果
+\begin_inset Formula $d_{zj}=d_{zj\prime},\forall z$
+\end_inset
+
+，
+则
+\begin_inset Formula $\gamma_{zj\prime}=\gamma_{zj},\forall z$
+\end_inset
+
+；
+不依赖nest
+\end_layout
+
+\begin_layout Standard
+
+\series bold
+推论3
+\series default
+：
+如果
+\begin_inset Formula $\forall z,j,\frac{\Delta d_{zj}}{d_{zj}}=constant$
+\end_inset
+
+，
+则
+\begin_inset Formula $\Delta\varepsilon_{j}=0,\forall j$
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+
+\series bold
+推论4：
+
+\series default
+
+\begin_inset Formula 
+\begin{align*}
+\frac{\partial\varepsilon_{j}}{\partial d_{zj\prime}} & =\frac{\partial\pi_{zj}}{\partial d_{zj\prime}}\gamma_{zj}\left(\frac{\varepsilon_{zj}-\varepsilon_{j}}{\pi_{zj}}-\theta\right)\\
+ & =\frac{\eta\theta}{d_{zj\prime}}\gamma_{zj}\left(\mathbf{1}_{j=j\prime}-\pi_{zj\prime}\right)\left(\varepsilon_{j}-\varepsilon_{zj}+\theta\pi_{zj}\right)
+\end{align*}
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula 
+\[
+\frac{\partial\pi_{zj}}{\partial d_{zj\prime}}=-\frac{\eta\theta}{d_{zj\prime}}\pi_{zj}\left(\mathbf{1}_{j=j\prime}-\pi_{zj\prime}\right)
+\]
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula 
+\[
+\frac{\partial^{2}\ln\pi_{zj}}{\partial\ln d_{zj\prime}\partial\ln w_{j}}=\frac{\partial\varepsilon_{zj}}{\partial\ln d_{zj\prime}}=\frac{\partial\theta(1-\pi_{zj})}{\partial\ln d_{zj\prime}}=-\theta\frac{\partial\pi_{zj}}{\partial\ln d_{zj\prime}}=\theta d_{zj\prime}\frac{\partial\pi_{zj}}{\partial d_{zj\prime}}=\eta\theta^{2}\pi_{zj}\left(\mathbf{1}_{j=j\prime}-\pi_{zj\prime}\right)
+\]
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+即，
+同样的
+\begin_inset Formula $d_{zj}$
+\end_inset
+
+冲击，
+
+\begin_inset Formula $w_{j}$
+\end_inset
+
+高的企业
+\begin_inset Formula $\pi_{zj}$
+\end_inset
+
+上升更多。
+
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula 
+\[
+L_{j}=\sum_{z}\frac{\left(w_{j}d_{zj}^{-\eta}\right)^{\theta}l_{z}}{\sum_{j\prime}\left(w_{j\prime}d_{zj\prime}^{-\eta}\right)^{\theta}}=\sum_{z}\pi_{zj}l_{z}
+\]
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Section*
+3.
+ The Effect of Cross-Sea Bridge on Labor Market Power
+\end_layout
+
+\begin_layout Subsection*
+3.1 模型背后的机制
+\end_layout
+
+\begin_layout Standard
+修桥的效应取决于
+\series bold
+初始的劳动力
+\begin_inset Formula $l_{z}$
+\end_inset
+
+、企业
+\begin_inset Formula $o(j)$
+\end_inset
+
+与生产率
+\begin_inset Formula $z_{j}$
+\end_inset
+
+分布？
+
+\end_layout
+
+\begin_layout Subsection*
+3.2 Empirical结果一览
+\end_layout
+
+\begin_layout Standard
+修桥前：
+（1）
+\begin_inset Formula $incomeshare\propto wage\propto markdown^{-1}$
+\end_inset
+
+；
+（2）
+\begin_inset Formula $incomeshare\propto cost^{-1}$
+\end_inset
+
+，
+但不显著；
+（3）
+\begin_inset Formula $markdown\propto cost$
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+修桥后：
+
+\series bold
+（1）
+\begin_inset Formula $markdown\downarrow$
+\end_inset
+
+，
+高
+\begin_inset Formula $wage$
+\end_inset
+
+企业
+\begin_inset Formula $\uparrow$
+\end_inset
+
+，
+低
+\begin_inset Formula $wage$
+\end_inset
+
+企业
+\begin_inset Formula $\downarrow$
+\end_inset
+
+
+\series default
+；
+（2）雇员上升，
+高
+\begin_inset Formula $wage$
+\end_inset
+
+企业
+\begin_inset Formula $\uparrow$
+\end_inset
+
+更多；
+（3）
+\begin_inset Formula $wage\uparrow$
+\end_inset
+
+，
+高
+\begin_inset Formula $wage$
+\end_inset
+
+企业
+\begin_inset Formula $\uparrow$
+\end_inset
+
+更多（结果不好）；
+（4）对
+\begin_inset Formula $markup$
+\end_inset
+
+无影响。
+
+\end_layout
+
+\begin_layout Section*
+4.
+ Data
+\end_layout
+
+\begin_layout Standard
+1、弹性参数：
+（1）wage-commuting elas 
+\begin_inset Formula $\eta$
+\end_inset
+
+；
+（2）dispersion of idiosyncratic preference shock 
+\begin_inset Formula $\theta$
+\end_inset
+
+；
+（3）dependency between firms 
+\begin_inset Formula $\sigma$
+\end_inset
+
+；
+（4）decreasing return to scale 
+\begin_inset Formula $\alpha$
+\end_inset
+
+；
+
+\end_layout
+
+\begin_layout Standard
+2、变量：
+（1）productiviy 
+\begin_inset Formula $z_{j}$
+\end_inset
+
+；
+（2）initial distribution of labor 
+\begin_inset Formula $l_{z}$
+\end_inset
+
+；
+（3）
+\begin_inset Formula $d_{zj}$
+\end_inset
+
+
+\end_layout
+
+\begin_layout Section*
+5.
+ Calibration
+\end_layout
+
+\begin_layout Subsection*
+5.1 
+\begin_inset Formula $\theta,\eta$
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+Step1：
+Given一组
+\begin_inset Formula $\left(\theta,\eta\right)$
+\end_inset
+
+，
+青岛市制造业企业信息（工企库+税调库）
+\end_layout
+
+\begin_layout Standard
+Step2：
+求解MA变化前后的均衡，
+并进行如下回归，
+估计得到
+\begin_inset Formula $\beta_{1}$
+\end_inset
+
+和
+\begin_inset Formula $\beta_{2}$
+\end_inset
+
+：
+
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula 
+\[
+MA_{j}=\sum_{z}\frac{l_{z}}{l}d_{zj}
+\]
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula 
+\[
+d\ln l_{j}=\beta_{0}+\beta_{1}\text{BigMA}+\beta_{2}\Big(\text{BigMA}\times(\ln w_{j}-\overline{\ln w_{j}})\Big)
+\]
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+其中，
+
+\begin_inset Formula $\overline{\ln w_{j}}$
+\end_inset
+
+为初始工资的处理组（
+\family roman
+\series medium
+\shape up
+\size normal
+\emph off
+\nospellcheck off
+\bar no
+\strikeout off
+\xout off
+\uuline off
+\uwave off
+\noun off
+\color none
+BigMA
+\family default
+\series default
+\shape default
+\size default
+\emph default
+\nospellcheck default
+\bar default
+\strikeout default
+\xout default
+\uuline default
+\uwave default
+\noun default
+\color inherit
+=1）平均值。
+为什么不用全部企业的平均值？
+
+\end_layout
+
+\begin_layout Standard
+因为（1）交互项回归系数的含义是，
+工资不同如何影响处理组相较于控制组的
+\begin_inset Formula $d\ln l_{j}$
+\end_inset
+
+的差距？
+如果全局均值偏低，
+处理组工资偏高，
+这会导致处理组中甚至没有工资等于全局均值的样本，
+OLS需要外推以估计系数。
+
+\end_layout
+
+\begin_layout Standard
+（2）让
+\begin_inset Formula $\text{BigMA}$
+\end_inset
+
+与
+\begin_inset Formula $(\ln w_{j}-\overline{\ln w_{j}})$
+\end_inset
+
+正交
+\end_layout
+
+\begin_layout Standard
+如何模型中的
+\begin_inset Formula $\ln w_{j}$
+\end_inset
+
+方差与数据中差距较大，
+可以考虑再除以方差。
+
+\end_layout
+
+\begin_layout Standard
+Step3:
+ 如果N组回归系数的均值
+\begin_inset Formula $\bar{\beta_{1}},\bar{\beta_{2}}$
+\end_inset
+
+与实际数据中估计得到的相近，
+则得到合理的
+\begin_inset Formula $\theta$
+\end_inset
+
+和
+\begin_inset Formula $\eta$
+\end_inset
+
+。
+即：
+
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula 
+\[
+\left(\hat{\theta},\hat{\eta}\right)=\arg\min_{\tilde{\theta},\tilde{\eta}}\left(m^{model}\left(\theta,\eta\right)-m^{data}\right)^{\top}W\left(m^{model}\left(\theta,\eta\right)-m^{data}\right)
+\]
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+其中，
+
+\begin_inset Formula $m^{data}=\left(\begin{array}{c}
+\beta_{1}^{data}\\
+\beta_{2}^{data}
+\end{array}\right)$
+\end_inset
+
+，
+
+\begin_inset Formula $m^{model}\left(\theta,\eta\right)=\left(\begin{array}{c}
+\bar{\beta_{1}}\left(\theta,\eta\right)\\
+\bar{\beta_{2}}\left(\theta,\eta\right)
+\end{array}\right)$
+\end_inset
+
+。
+
+\begin_inset Formula $W$
+\end_inset
+
+可以直接用
+\begin_inset Formula $I$
+\end_inset
+
+，
+也可以用
+\begin_inset Formula $\Sigma$
+\end_inset
+
+（
+\begin_inset Formula $m^{data}$
+\end_inset
+
+的协方差矩阵）
+\end_layout
+
+\begin_layout Subsection*
+5.2 
+\begin_inset Formula $\alpha_{j}$
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula 
+\begin{align*}
+w_{j} & =P_{j}\frac{\partial Y_{j}\left(l_{j}\right)}{\partial l_{j}}\times\frac{\varepsilon_{j}}{1+\varepsilon_{j}}\\
+ & =P_{j}\alpha z_{j}l_{j}^{\alpha-1}\times\frac{\varepsilon_{j}}{1+\varepsilon_{j}}=\alpha_{j}R_{j}l_{j}^{-1}\times\frac{\varepsilon_{j}}{1+\varepsilon_{j}}
+\end{align*}
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula 
+\[
+normalize\ P_{j}\ to\ 1\Rightarrow\alpha_{j}=\frac{w_{j}}{z_{j}l_{j}^{\alpha_{j}-1}}\times\frac{1+\varepsilon_{j}}{\varepsilon_{j}}
+\]
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Subsection*
+5.3 模型求解
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula 
+\[
+guess\quad w_{j}\begin{cases}
+\pi_{zj}=\frac{\left(w_{j}d_{zj}^{-\eta}\right)^{\theta}}{\sum_{j\prime}\left(w_{j\prime}d_{zj\prime}^{-\eta}\right)^{\theta}}\\
+\varepsilon_{zj}=\theta\left[1-\pi_{zj}\right]\\
+\varepsilon_{j}=\sum_{z}\frac{\pi_{zj}l_{z}}{\sum_{z\prime}\pi_{z\prime j}l_{z\prime}}\varepsilon_{zj}\\
+\triangle:\frac{\alpha z_{j}l_{j}^{\alpha-1}}{w_{j}}=1+\varepsilon_{j}^{-1}
+\end{cases}
+\]
+
+\end_inset
+
+
+\end_layout
+
+\end_body
+\end_document
