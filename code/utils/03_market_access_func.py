@@ -28,21 +28,21 @@ GOV_PATH = GEO_RAW_DIR / "govern_qingdao.xlsx"
 FIRM_SCENARIOS = [
     {
         "name": "nosec",
-        "firm_path": GEO_TEMP_DIR / "firm_qingdao.xlsx",
-        "with_bridge": GEO_PROCESSED_DIR / "commute_time_qingdao_python.csv",
-        "no_bridge": GEO_PROCESSED_DIR / "commute_time_no_bridge_qingdao_python.csv",
+        "firm_path": GEO_TEMP_DIR / "firm_qingdao_07_20_nosec.xlsx",
+        "with_bridge": GEO_PROCESSED_DIR / "commute_time_qingdao.csv",
+        "no_bridge": GEO_PROCESSED_DIR / "commute_time_no_bridge_qingdao.csv",
     },
     {
         "name": "model",
-        "firm_path": GEO_TEMP_DIR / "firm_list_qingdao_model.xlsx",
-        "with_bridge": GEO_PROCESSED_DIR / "commute_time_qingdao_model_python.csv",
-        "no_bridge": GEO_PROCESSED_DIR / "commute_time_no_bridge_qingdao_model_python.csv",
+        "firm_path": GEO_TEMP_DIR / "firm_qingdao_model.xlsx",
+        "with_bridge": GEO_PROCESSED_DIR / "commute_time_qingdao_model.csv",
+        "no_bridge": GEO_PROCESSED_DIR / "commute_time_no_bridge_qingdao_model.csv",
     },
     {
-        "name": "07_20",
-        "firm_path": GEO_RAW_DIR / "firm_qingdao_07_20.xlsx",
-        "with_bridge": GEO_PROCESSED_DIR / "commute_time_qingdao_07_20_python.csv",
-        "no_bridge": GEO_PROCESSED_DIR / "commute_time_no_bridge_qingdao_07_20_python.csv",
+        "name": "regression",
+        "firm_path": GEO_TEMP_DIR / "firm_qingdao_reg.xlsx",
+        "with_bridge": GEO_PROCESSED_DIR / "commute_time_qingdao_reg.csv",
+        "no_bridge": GEO_PROCESSED_DIR / "commute_time_no_bridge_qingdao_reg.csv",
     },
 ]
 

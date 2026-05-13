@@ -109,7 +109,8 @@ function Converge(UpdateRule::Function, init::Array;
     power=false,
     normalize=nothing,
     displayGap=false,
-    displaySummary=false)
+    displaySummary=false,
+    returnInfo=false)
 
     # Initialize the variables
     iter = 0
@@ -135,29 +136,34 @@ function Converge(UpdateRule::Function, init::Array;
         end
     end
 
+    converged = XDiff <= tol
+
     if displaySummary
-        if iter < maxIter
-            println("Successful convergence in ", iter, " iterations.")
+        if converged
+            println("Successful convergence in ", iter, " iterations. Final gap: ", XDiff)
         else
-            println("Maximum number of iterations reached.")
+            println("Maximum number of iterations reached. Final gap: ", XDiff)
         end
     end
 
-    return X
+    info = (; converged, iterations = iter, gap = XDiff)
+    return returnInfo ? (X, info) : X
 end
 
 # Solve the equilibrium
 function SolveModel(vars::NamedTuple, params::NamedTuple;
     damp=0.8, tol=1e-10, maxIter=1e3, power=false,
     displayGap=false, displaySummary=false,
-    wⱼ_init=nothing)  # optional warm start
+    wⱼ_init=nothing,
+    returnInfo=false)  # optional warm start
 
     # unpack the data
     (; l, d, zⱼ) = vars
     (; η, θ, α) = params
 
     # initial guess (use warm start if provided)
-    wⱼ = isnothing(wⱼ_init) ? ones(J) : copy(wⱼ_init)
+    J_local = size(d, 2)
+    wⱼ = isnothing(wⱼ_init) ? ones(J_local) : copy(wⱼ_init)
 
     # update rule
     function UpdateRule(wⱼ)
@@ -177,14 +183,26 @@ function SolveModel(vars::NamedTuple, params::NamedTuple;
     end
 
     # Convergence
-    wⱼ = Converge(x -> UpdateRule(x)[1], wⱼ;
+    wⱼ, convergence = Converge(x -> UpdateRule(x)[1], wⱼ;
         tol=tol, maxIter=maxIter,
         damp=damp, power=power,
         normalize = x -> x ./ mean(x),
         displayGap=displayGap,
-        displaySummary=displaySummary)
+        displaySummary=displaySummary,
+        returnInfo=true)
 
-    return UpdateRule(wⱼ)
+    solution = UpdateRule(wⱼ)
+    if returnInfo
+        return (;
+            wⱼ = solution[1],
+            π_zj = solution[2],
+            ε_zj = solution[3],
+            lⱼ = solution[4],
+            εⱼ = solution[5],
+            convergence...)
+    end
+
+    return solution
 end
 
 # Solve zⱼ from observed wⱼ
@@ -209,17 +227,84 @@ function SolveZfromW(vars::NamedTuple, params::NamedTuple)
     return zⱼ
 end
 
+function EstimateTwoPeriodDIDMoments(regDF::DataFrame)
+    # Equivalent to:
+    # reghdfe lnl i1.bigMA#i1.post c.w_diff#i1.bigMA#i1.post,
+    #     absorb(id year c.w_diff#year)
+    # for a balanced two-period panel. The code below applies the
+    # Frisch-Waugh-Lovell residualization implied by these absorbed effects.
+    baseline = sort(regDF[regDF.post .== 0, :], :id)
+    counterfactual = sort(regDF[regDF.post .== 1, :], :id)
+
+    if nrow(baseline) != nrow(counterfactual) || !all(baseline.id .== counterfactual.id)
+        return [Inf, Inf]
+    end
+
+    # Firm FE residualization in a two-period panel is equivalent to taking
+    # firm-level changes. This is a transformation of the lnl regression, not a
+    # different dependent-variable specification.
+    Δlnl = Float64.(counterfactual.lnl .- baseline.lnl)
+    bigMA = Float64.(baseline.bigMA)
+    w_diff = Float64.(baseline.w_diff)
+    X_absorb = hcat(ones(length(Δlnl)), w_diff)
+    X_target = hcat(bigMA, w_diff .* bigMA)
+
+    if rank(X_absorb) < size(X_absorb, 2)
+        return [Inf, Inf]
+    end
+
+    # FWL residualization
+    y_resid = Δlnl - X_absorb * (X_absorb \ Δlnl)
+    X_resid = X_target - X_absorb * (X_absorb \ X_target)
+
+    if rank(X_resid) < size(X_resid, 2)
+        return [Inf, Inf]
+    end
+
+    β = X_resid \ y_resid
+    return [β[1], β[2]]
+end
+
+function MomentFirmMask(J::Integer; moment_firm_mask=nothing, firm_ids=nothing,
+    reg_sample_ids=nothing, restrict_to_reg_sample::Bool=false)
+
+    if !isnothing(moment_firm_mask)
+        length(moment_firm_mask) == J || error("moment_firm_mask must have length $J")
+        any(ismissing, moment_firm_mask) && error("moment_firm_mask cannot contain missing values")
+        keep = Bool.(moment_firm_mask)
+    elseif restrict_to_reg_sample
+        isnothing(firm_ids) && error("firm_ids is required when restrict_to_reg_sample=true")
+        isnothing(reg_sample_ids) && error("reg_sample_ids is required when restrict_to_reg_sample=true")
+        length(firm_ids) == J || error("firm_ids must have length $J")
+
+        reg_ids = Set(collect(skipmissing(reg_sample_ids)))
+        keep = [!ismissing(id) && id in reg_ids for id in firm_ids]
+    else
+        keep = trues(J)
+    end
+
+    any(keep) || error("Moment sample is empty")
+    return keep
+end
+
 # Compute model moments given parameters
-function ComputeModelMoments(params_to_estimate; l, d, d′, wⱼ_data, lⱼ_data, α)
+function ComputeModelMoments(params_to_estimate; l, d, d′, wⱼ_data, lⱼ_data, α,
+    inner_tol=1e-5, inner_maxIter=3000, inner_display=false, require_convergence=true,
+    continuation_steps=5, employment_change=:log, wage_center=:treated,
+    moment_firm_mask=nothing, firm_ids=nothing, reg_sample_ids=nothing,
+    restrict_to_reg_sample::Bool=false)
     η, θ = params_to_estimate
+    continuation_steps = max(1, Int(continuation_steps))
     
     # Ensure parameters are in valid range
     if η <= 0 || θ <= 0
         return [Inf, Inf]
     end
     
-    # Adaptive damping: higher θ needs more damping for stability
-    damp = clamp(0.5 + 0.03 * θ, 0.6, 0.97)
+    # Higher θ can make the fixed point sharper. The baseline is anchored by
+    # observed wages, while the bridge counterfactual needs more damping.
+    damp_base = clamp(0.45 + 0.04 * θ, 0.55, 0.85)
+    damp_cf = clamp(0.65 + 0.085 * θ, 0.75, 0.97)
     
     params = (; η, θ, α)
     
@@ -235,45 +320,104 @@ function ComputeModelMoments(params_to_estimate; l, d, d′, wⱼ_data, lⱼ_dat
     # Step 2b: Solve baseline model with incremental continuation for high θ
     vars_base = (; l, d, zⱼ)
     # zⱼ is backed out from wⱼ_data, so use wⱼ_data as the anchor for the baseline solve.
-    wⱼ, π_zj, ε_zj, lⱼ, εⱼ = SolveModel(vars_base, params;
-        damp=damp, tol=1e-7, power=false, maxIter=1000,
-        wⱼ_init=wⱼ_data, displaySummary=true)
+    base = SolveModel(vars_base, params;
+        damp=damp_base, tol=inner_tol, power=false, maxIter=inner_maxIter,
+        wⱼ_init=wⱼ_data, displaySummary=inner_display, returnInfo=true)
+    wⱼ, π_zj, ε_zj, lⱼ, εⱼ = base.wⱼ, base.π_zj, base.ε_zj, base.lⱼ, base.εⱼ
+
+    if require_convergence && !base.converged
+        return [Inf, Inf]
+    end
     
     # Check for invalid wages
     if any(isnan.(wⱼ)) || any(isinf.(wⱼ))
         return [Inf, Inf]
     end
     
-    # Step 2c: Solve counterfactual model (use baseline as warm start)
-    vars_cf = (; l, d = d′, zⱼ)
-    wⱼ′, π_zj′, ε_zj′, lⱼ′, εⱼ′ = SolveModel(vars_cf, params;
-        damp=damp, tol=1e-7, power=false, maxIter=1000,
-        wⱼ_init=wⱼ, displaySummary=true)
-    
+    # Step 2c: Solve counterfactual model along a commuting-time path.
+    # This continuation step is much more stable than jumping from d to d′.
+    cf = nothing
+    wⱼ_cf_init = wⱼ
+    log_d = log.(d)
+    log_d′ = log.(d′)
+    for step in 1:continuation_steps
+        path_share = step / continuation_steps
+        d_path = exp.((1 - path_share) .* log_d .+ path_share .* log_d′)
+        vars_cf = (; l, d = d_path, zⱼ)
+        if inner_display && continuation_steps > 1
+            println("Counterfactual continuation step ", step, "/", continuation_steps)
+        end
+        cf = SolveModel(vars_cf, params;
+            damp=damp_cf, tol=inner_tol, power=false, maxIter=inner_maxIter,
+            wⱼ_init=wⱼ_cf_init, displaySummary=inner_display, returnInfo=true)
+
+        if require_convergence && !cf.converged
+            return [Inf, Inf]
+        end
+
+        wⱼ_cf_init = cf.wⱼ
+    end
+    wⱼ′, π_zj′, ε_zj′, lⱼ′, εⱼ′ = cf.wⱼ, cf.π_zj, cf.ε_zj, cf.lⱼ, cf.εⱼ
+
     # Check for invalid counterfactual wages
     if any(isnan.(wⱼ′)) || any(isinf.(wⱼ′))
         return [Inf, Inf]
     end
     
-    # Step 2d: Compute regression moments
-    l̂ⱼ = lⱼ′ ./ lⱼ
-    dlnlⱼ = l̂ⱼ .- 1
-    dlnMA = log.(sum((d - d′) .* l, dims = 1)') |> x -> replace(x, -Inf => -8)
-    bigMA = Float64.(dlnMA .>= -1)
+    # Step 2d: Compute regression moments from appended two-period firm data.
+    # employment_change is kept in the signature for caller compatibility; this
+    # DID specification uses log employment levels, matching the lnl outcome.
+    dMA = sum((d - d′) .* l, dims = 1)' |> x -> replace(x, -Inf => -8)
+    bigMA = Float64.(dMA .>= 0.5)
     
-    regDF = DataFrame(bigMA = vec(bigMA), dlnl = vec(dlnlⱼ), w = vec(log.(wⱼ)))
-    regDF.w_treatedmean = fill(mean(regDF[regDF.bigMA .== 1, :w]), nrow(regDF))
-    regDF.w_diff = regDF.w .- regDF.w_treatedmean
-    regModel = lm(@formula(dlnl ~ bigMA + bigMA & w_diff + w_diff), regDF)
-    
-    β₁ = coef(regModel)[2]
-    β₂ = coef(regModel)[4]
-    
-    return [β₁, β₂]
+    w = vec(log.(max.(wⱼ, eps(Float64))))
+    keep = MomentFirmMask(length(w); moment_firm_mask, firm_ids, reg_sample_ids,
+        restrict_to_reg_sample)
+
+    regDF_firm = DataFrame(
+        id = collect(1:length(w))[keep],
+        bigMA = vec(bigMA)[keep],
+        w = w[keep]
+    )
+    if wage_center == :treated
+        treated = regDF_firm.bigMA .== 1
+        w_center = any(treated) ? mean(regDF_firm[treated, :w]) : mean(regDF_firm[!, :w])
+    elseif wage_center == :all
+        w_center = mean(regDF_firm[!, :w])
+    else
+        error("wage_center must be :treated or :all")
+    end
+    regDF_firm.w_diff = regDF_firm.w .- w_center
+
+    J = nrow(regDF_firm)
+    regDF = vcat(
+        DataFrame(
+            id = regDF_firm.id,
+            year = zeros(Int, J),
+            post = zeros(Int, J),
+            bigMA = regDF_firm.bigMA,
+            w_diff = regDF_firm.w_diff,
+            lnl = vec(log.(max.(lⱼ, eps(Float64))))[keep]
+        ),
+        DataFrame(
+            id = regDF_firm.id,
+            year = ones(Int, J),
+            post = ones(Int, J),
+            bigMA = regDF_firm.bigMA,
+            w_diff = regDF_firm.w_diff,
+            lnl = vec(log.(max.(lⱼ′, eps(Float64))))[keep]
+        )
+    )
+
+    return EstimateTwoPeriodDIDMoments(regDF)
 end
 
 # Objective function for estimation
-function ObjectiveFunction(params_to_estimate; l, d, d′, wⱼ_data, lⱼ_data, α, β_target, verbose=false)
+function ObjectiveFunction(params_to_estimate; l, d, d′, wⱼ_data, lⱼ_data, α, β_target,
+    verbose=false, inner_tol=1e-5, inner_maxIter=3000, inner_display=false,
+    require_convergence=true, continuation_steps=5, employment_change=:log,
+    wage_center=:treated, max_abs_moment=10.0, moment_firm_mask=nothing,
+    firm_ids=nothing, reg_sample_ids=nothing, restrict_to_reg_sample::Bool=false)
     η, θ = params_to_estimate
     
     # Return large penalty for invalid parameters
@@ -281,10 +425,15 @@ function ObjectiveFunction(params_to_estimate; l, d, d′, wⱼ_data, lⱼ_data,
         return 1e10
     end
     
-    β_model = ComputeModelMoments(params_to_estimate; l, d, d′, wⱼ_data, lⱼ_data, α)
+    β_model = ComputeModelMoments(params_to_estimate; l, d, d′, wⱼ_data, lⱼ_data, α,
+        inner_tol=inner_tol, inner_maxIter=inner_maxIter, inner_display=inner_display,
+        require_convergence=require_convergence, continuation_steps=continuation_steps,
+        employment_change=employment_change, wage_center=wage_center,
+        moment_firm_mask=moment_firm_mask, firm_ids=firm_ids,
+        reg_sample_ids=reg_sample_ids, restrict_to_reg_sample=restrict_to_reg_sample)
     
     # Check for invalid model output
-    if any(isnan.(β_model)) || any(isinf.(β_model))
+    if any(isnan.(β_model)) || any(isinf.(β_model)) || any(abs.(β_model) .> max_abs_moment)
         return 1e10
     end
     
@@ -297,4 +446,130 @@ function ObjectiveFunction(params_to_estimate; l, d, d′, wⱼ_data, lⱼ_data,
     end
     
     return obj
+end
+
+function EvaluateCalibrationGrid(; l, d, d′, wⱼ_data, lⱼ_data, α, β_target,
+    η_grid, θ_grid, inner_tol=2e-5, inner_maxIter=3000,
+    continuation_steps=5, employment_change=:log, wage_center=:treated,
+    max_abs_moment=10.0, verbose=true, moment_firm_mask=nothing,
+    firm_ids=nothing, reg_sample_ids=nothing, restrict_to_reg_sample::Bool=false)
+
+    results = DataFrame(
+        η = Float64[],
+        θ = Float64[],
+        β1 = Float64[],
+        β2 = Float64[],
+        objective = Float64[]
+    )
+
+    total = length(η_grid) * length(θ_grid)
+    counter = 0
+    for η in η_grid, θ in θ_grid
+        counter += 1
+        β_model = ComputeModelMoments([η, θ]; l, d, d′, wⱼ_data, lⱼ_data, α,
+            inner_tol=inner_tol, inner_maxIter=inner_maxIter,
+            inner_display=false, require_convergence=true,
+            continuation_steps=continuation_steps,
+            employment_change=employment_change, wage_center=wage_center,
+            moment_firm_mask=moment_firm_mask, firm_ids=firm_ids,
+            reg_sample_ids=reg_sample_ids, restrict_to_reg_sample=restrict_to_reg_sample)
+
+        if any(isnan.(β_model)) || any(isinf.(β_model)) || any(abs.(β_model) .> max_abs_moment)
+            obj = 1e10
+        else
+            obj = sum((β_model .- β_target) .^ 2)
+        end
+
+        push!(results, (η, θ, β_model[1], β_model[2], obj))
+        if verbose
+            println("Grid ", counter, "/", total, ": η=", η, ", θ=", θ,
+                " → β_model=", β_model, ", obj=", obj)
+        end
+    end
+
+    sort!(results, :objective)
+    return results
+end
+
+function _box_to_unconstrained(x, lower, upper)
+    x_inner = clamp.(Float64.(x), lower .+ eps.(lower), upper .- eps.(upper))
+    return log.((x_inner .- lower) ./ (upper .- x_inner))
+end
+
+function _unconstrained_to_box(y, lower, upper)
+    return lower .+ (upper .- lower) ./ (1 .+ exp.(-Float64.(y)))
+end
+
+function CalibrateEtaTheta(; l, d, d′, wⱼ_data, lⱼ_data, α, β_target,
+    x0=[2.75, 2.0], starts=nothing, lower=[0.25, 0.25], upper=[8.0, 8.0],
+    iterations=250, x_abstol=1e-4, f_reltol=1e-8,
+    inner_tol=1e-5, inner_maxIter=3000, continuation_steps=5,
+    employment_change=:log, wage_center=:treated, max_abs_moment=10.0,
+    verbose=true, show_trace=true, moment_firm_mask=nothing, firm_ids=nothing,
+    reg_sample_ids=nothing, restrict_to_reg_sample::Bool=false)
+
+    lower = Float64.(lower)
+    upper = Float64.(upper)
+
+    function objective_y(y)
+        x = _unconstrained_to_box(y, lower, upper)
+        return ObjectiveFunction(x; l, d, d′, wⱼ_data, lⱼ_data, α, β_target,
+            verbose=verbose, inner_tol=inner_tol, inner_maxIter=inner_maxIter,
+            inner_display=false, require_convergence=true,
+            continuation_steps=continuation_steps,
+            employment_change=employment_change, wage_center=wage_center,
+            max_abs_moment=max_abs_moment, moment_firm_mask=moment_firm_mask,
+            firm_ids=firm_ids, reg_sample_ids=reg_sample_ids,
+            restrict_to_reg_sample=restrict_to_reg_sample)
+    end
+
+    start_list = isnothing(starts) ? [x0] : starts
+    runs = NamedTuple[]
+    best_run = nothing
+
+    for (start_id, start) in enumerate(start_list)
+        x_start = clamp.(Float64.(start), lower .+ 1e-8, upper .- 1e-8)
+        y0 = _box_to_unconstrained(x_start, lower, upper)
+
+        if verbose
+            println("\nLocal calibration start ", start_id, "/", length(start_list),
+                ": x0=", x_start)
+        end
+
+        result = optimize(
+            objective_y,
+            y0,
+            NelderMead(),
+            Optim.Options(
+                show_trace = show_trace,
+                iterations = iterations,
+                x_abstol = x_abstol,
+                f_reltol = f_reltol
+            )
+        )
+
+        params = _unconstrained_to_box(Optim.minimizer(result), lower, upper)
+        run = (;
+            parameters = params,
+            objective = Optim.minimum(result),
+            converged = Optim.converged(result),
+            result,
+            start = x_start
+        )
+        push!(runs, run)
+
+        if isnothing(best_run) || run.objective < best_run.objective
+            best_run = run
+        end
+    end
+
+    return (;
+        parameters = best_run.parameters,
+        objective = best_run.objective,
+        converged = best_run.converged,
+        result = best_run.result,
+        runs,
+        lower,
+        upper
+    )
 end

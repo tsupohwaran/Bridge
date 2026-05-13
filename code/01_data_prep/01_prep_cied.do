@@ -101,4 +101,4 @@ sort group year
 save "$cied_temp_path/cied_qingdao_07_14.dta", replace
 
 keep if year == 2011
-save "$ctsd_processed_path/firm_cied_qingdao.dta", replace
+save "$cied_temp_path/cied_qingdao_11.dta", replace

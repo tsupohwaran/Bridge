@@ -47,52 +47,120 @@ RunStata(projPath, stataPath, "code/02_empirical/bridge_effect.do")
 # Load data
 #==================================================#
 
-df = DataFrame(load(projPath * "/data/model/processed/firm_qingdao_model.dta"));
-l = df[!, :pop] |> x -> Float64.(x) |> x -> reshape(x, Z, J) |> x -> x[:, 1] |> x -> x ./ sum(x); # normalize total population to 1
-lⱼ_data = df[!, :employ] |> x -> Float64.(x) |> x -> reshape(x, Z, J) |> x -> x[1, :] |> x -> x ./ sum(x);
+# load model sample and normalize the variables
+Z = 128; # number of towns
+df = DataFrame(load(projPath * "/data/model/processed/firm_qingdao_model_10.dta"));
+J = nrow(df) ÷ Z; # number of firms
+
+l = df[!, :pop] |> x -> Float64.(x) |> 
+    x -> reshape(x, Z, J) |> 
+    x -> x[:, 1] |> 
+    x -> x ./ sum(x); # normalize total population to 1
+lⱼ_data = Float64.(disallowmissing(df[!, :employ])) |> 
+    x -> reshape(x, Z, J) |> 
+    x -> x[1, :] |> 
+    x -> x ./ sum(x); # normalize total employment to 1
 d = reshape(Float64.(df[!, :dzj]), Z, J) |> x -> replace(x, 0.0 => 1e-2);
 d′ = reshape(Float64.(df[!, :dzj_prime]), Z, J) |> x -> replace(x, 0.0 => 1e-2);
-wⱼ_data = reshape(Float64.(df[!, :wage_inital]), Z, J)[1, :] |> x -> x ./ sum(x .* lⱼ_data); # normalize total wage bill to 1
+wⱼ_data = reshape(Float64.(df[!, :wage_inital]), Z, J)[1, :] |> 
+    x -> x ./ sum(x .* lⱼ_data); # normalize total wage bill to 1
 
-# zⱼ = reshape(Float64.(df[!, :z]), Z, J)[1, :] |> x -> clamp.(x, quantile(x, 0.05), quantile(x, 0.95)) |> x -> x ./ mean(x) # normalize zⱼ to have mean 1 (winsor 5% at both ends)
-# zⱼ = reshape(Float64.(df[!, :z]), Z, J)[1, :] |> x -> x ./ mean(x)
+# load regression sample
+df_reg = DataFrame(load(projPath * "/data/model/processed/firm_two_year_reg.dta"));
+firm_ids = collect(df[1:Z:end, :id]);
+reg_sample_ids = collect(skipmissing(df_reg[!, :id]));
+restrict_to_reg_sample = true; # set false to use all model firms for model moments
+moment_firm_mask = MomentFirmMask(J; firm_ids, reg_sample_ids, restrict_to_reg_sample);
+println("Model moment sample firms: ", sum(moment_firm_mask), "/", J,
+    restrict_to_reg_sample ? " matched to firm_two_year_reg.dta" : " full model sample");
 
 #==================================================#
 # Calibration: Back out η and θ from β₁ and β₂
 #==================================================#
 
 α = 0.4
-β_target = [-0.052, 0.085]
-x0 = [2.75, 2.0]
+β_target = [-0.092242, 0.0939565]
+η_bounds = [0.25, 8.0]
+θ_bounds = [0.25, 8.0]
+employment_change = :log
+wage_center = :all
 
-result = optimize(
-    x -> ObjectiveFunction(x; l, d, d′, wⱼ_data, lⱼ_data, α, β_target, verbose=true),
+# use grid search to find good starting points for the optimization
+# η_grid = [1.5, 3.0, 4.5, 6.0, 7.5]
+# θ_grid = [0.75, 1.5, 2.5, 3.5, 4.5]
+# grid_results = EvaluateCalibrationGrid(;
+#     l, d, d′, wⱼ_data, lⱼ_data, α, β_target,
+#     η_grid, θ_grid,
+#     inner_tol = 2e-5,
+#     inner_maxIter = 3000,
+#     continuation_steps = 5,
+#     employment_change,
+#     wage_center,
+#     moment_firm_mask,
+#     max_abs_moment = 10.0,
+#     verbose = true
+# )
+
+# mkpath(projPath * "/output/tables")
+# CSV.write(projPath * "/output/tables/calibration_grid.csv", grid_results)
+
+# top_grid = first(grid_results, min(4, nrow(grid_results)))
+# println("\nTop calibration grid points:")
+# show(top_grid, allrows = true, allcols = true)
+# println()
+
+# calibration_starts = [[row.η, row.θ] for row in eachrow(top_grid)]
+# pushfirst!(calibration_starts, x0)
+
+# based on the grid search results, we choose a good starting point for the optimization
+x0 = [1, 4.8]
+calibration = CalibrateEtaTheta(;
+    l, d, d′, wⱼ_data, lⱼ_data, α, β_target,
     x0,
-    NelderMead(),
-    Optim.Options(show_trace = true, iterations = 100, g_tol = 1e-8)
+    starts = [x0],
+    lower = [η_bounds[1], θ_bounds[1]],
+    upper = [η_bounds[2], θ_bounds[2]],
+    iterations = 250,
+    x_abstol = 1e-4,
+    f_reltol = 1e-8,
+    inner_tol = 1e-5,
+    inner_maxIter = 3000,
+    continuation_steps = 5,
+    employment_change,
+    wage_center,
+    moment_firm_mask,
+    max_abs_moment = 10.0,
+    verbose = true,
+    show_trace = true
 )
+result = calibration.result
 
 println("\n" * "="^50)
 println("OPTIMIZATION RESULTS")
 println("="^50)
-η_est, θ_est = Optim.minimizer(result)
-println("Estimated η: ", η_est)
-println("Estimated θ: ", θ_est)
-println("Final objective: ", Optim.minimum(result))
-println("Converged: ", Optim.converged(result))
+η_est, θ_est = calibration.parameters
+
+println("Final objective: ", calibration.objective)
+println("Converged: ", calibration.converged)
+println("Bounds: η ∈ ", η_bounds, ", θ ∈ ", θ_bounds)
 
 # Verify final moments
-β_final = ComputeModelMoments([η_est, θ_est]; l, d, d′, wⱼ_data, lⱼ_data, α)
+β_final = ComputeModelMoments([η_est, θ_est]; l, d, d′, wⱼ_data, lⱼ_data, α,
+    inner_tol = 1e-5, inner_maxIter = 5000, inner_display = true,
+    continuation_steps = 5, employment_change, wage_center,
+    moment_firm_mask)
 println("\nTarget  β: ", β_target)
 println("Model   β: ", β_final)
+println("Estimated η: ", η_est)
+println("Estimated θ: ", θ_est)
 
 #==================================================#
-# Simulation given η = 1; θ = 5;
+# Simulation using calibrated η and θ
 #==================================================#
 
 α = 0.4
-η = 3.1; # commute elasticity
-θ = 2.14; # shape parameter of Fréchet distribution
+η = η_est; # commute-wage elasticity
+θ = θ_est; # 
 
 # Solve the zⱼ from observed wⱼ
 vars = (; wⱼ = wⱼ_data, l, d)
@@ -108,36 +176,32 @@ params = (; η, θ, α)
 # zⱼ was inverted from wⱼ_data, so this keeps the solver on the same equilibrium branch.
 wⱼ, π_zj, ε_zj, lⱼ, εⱼ = SolveModel(vars, params; displayGap = true, damp = 0.6, tol = 1e-7, displaySummary = true, power = false, wⱼ_init = wⱼ_data);
 
-# Calculate correlation between solved wages and observed wages
-corr_wages = cor(vec(wⱼ), vec(wⱼ_data))
-println("Correlation between wⱼ_solved and wⱼ_data: ", corr_wages) # should be very close to 1
+## Calculate correlation between solved wages and observed wages
+# corr_wages = cor(vec(wⱼ), vec(wⱼ_data))
+# println("Correlation between wⱼ_solved and wⱼ_data: ", corr_wages) # should be very close to 1
 
 # solve the model for counterfactual
 vars′ = (; l, d = d′, zⱼ);
-wⱼ′, π_zj′, ε_zj′, lⱼ′, εⱼ′ = SolveModel(vars′, params; displayGap = false, damp = 0.7, tol = 1e-7, displaySummary = true, power = false, wⱼ_init = wⱼ);
+wⱼ′, π_zj′, ε_zj′, lⱼ′, εⱼ′ = SolveModel(vars′, params; displayGap = false, damp = 0.6, tol = 1e-9, displaySummary = true, power = true, wⱼ_init = wⱼ);
 
-# Export wⱼ to Excel
-filepath = projPath * "/output/tables/wages.xlsx"
-isfile(filepath) && rm(filepath)
-XLSX.writetable(filepath, DataFrame(wj = vec(wⱼ)))
+
 
 # Analyze the results
 l̂ⱼ = lⱼ′ ./ lⱼ;
-dlnlⱼ = l̂ⱼ .- 1;
-dlnMA = log.(sum((d - d′) .* l, dims = 1)');
-dlnMA = replace(dlnMA, Inf => -8.0, -Inf => -8.0)
-density(dlnMA, title="Kernel Density Estimate of dlnMA", xlabel="dlnMA", ylabel="Density", legend=false)
+dlnlⱼ = log.(max.(lⱼ′, eps(Float64))) .- log.(max.(lⱼ, eps(Float64)));
+dMA = sum((d - d′) .* l, dims = 1)' |> x -> replace(x, -Inf => -8);
+bigMA = Float64.(dMA .>= 0.5);
 
-dlnMA = log.(sum((d - d′) .* l, dims = 1)') |> x -> replace(x, -Inf => -8)
-bigMA = Float64.(dlnMA .>= -1)
+regDF = DataFrame(bigMA = vec(bigMA), dlnl = vec(dlnlⱼ), w = vec(log.(wⱼ)));
+regDF = regDF[moment_firm_mask, :];
+regDF.w_treatedmean = fill(mean(regDF[!, :w]), nrow(regDF));
 
-regDF = DataFrame(bigMA = vec(bigMA), dlnl = vec(dlnlⱼ), w = vec(log.(wⱼ)))
-regDF.w_treatedmean = fill(mean(regDF[regDF.bigMA .== 1, :w]), nrow(regDF))
-regDF.w_diff = regDF.w .- regDF.w_treatedmean
+regDF.w_diff = regDF.w .- regDF.w_treatedmean;
 regModel = lm(@formula(dlnl ~ bigMA + bigMA & w_diff + w_diff), regDF)
 
-β₁ = coef(regModel)[2]
-β₂ = coef(regModel)[4]
+β = [coef(regModel)[2], coef(regModel)[4]]
+
+density(dMA, title="Kernel Density Estimate of dMA", xlabel="dMA", ylabel="Density", legend=false)
 
 #==================================================#
 # Plot
@@ -147,12 +211,12 @@ regModel = lm(@formula(dlnl ~ bigMA + bigMA & w_diff + w_diff), regDF)
 # labor
 begin
     sorted_idx = sortperm(vec(wⱼ))
-    scatter(vec(dlnMA)[sorted_idx], vec(clamp.(dlnlⱼ, -Inf, 5))[sorted_idx], 
+    scatter(vec(dMA)[sorted_idx], vec(clamp.(dlnlⱼ, -Inf, 5))[sorted_idx], 
         marker_z = vec(wⱼ)[sorted_idx],
         color = :RdBu,
         colorbar = true,
         colorbar_title = "wⱼ",
-        xlabel = "dlnMA", 
+        xlabel = "dMA", 
         ylabel = "dlnlⱼ",
         title = "Employment Change vs Market Access Change",
         legend = false,
@@ -162,12 +226,12 @@ begin
 end
 savefig(projPath * "/output/figures/model/labor_change.png")
 
-scatter(vec(dlnMA), vec(log.(lⱼ)), 
+scatter(vec(dMA), vec(log.(lⱼ)), 
     marker_z = vec(wⱼ),
     color = :RdBu,
     colorbar = true,
     colorbar_title = "wⱼ",
-    xlabel = "log of dlnMA", 
+    xlabel = "log of dMA", 
     ylabel = "log of lⱼ",
     title = "Employment vs Market Access Change",
     legend = false,
@@ -179,12 +243,12 @@ savefig(projPath * "/output/figures/model/labor.png")
 # wages change
 ŵⱼ = wⱼ′ ./ wⱼ;
 dlnwⱼ = ŵⱼ .- 1;
-scatter(vec(dlnMA), vec(clamp.(dlnwⱼ, -Inf, 0.5)), 
+scatter(vec(dMA), vec(clamp.(dlnwⱼ, -Inf, 0.5)), 
     marker_z = vec(wⱼ),
     color = :RdBu,
     colorbar = true,
     colorbar_title = "wⱼ",
-    xlabel = "dlnMA", 
+    xlabel = "dMA", 
     ylabel = "dlnwⱼ",
     title = "Wage Change vs Market Access Change",
     legend = false,
@@ -201,12 +265,12 @@ savefig(projPath * "/output/figures/model/wage_change.png")
 ν̂ = ν′ ./ ν
 dlnν = clamp.(ν̂ .- 1, -0.001, 0.001)
 dlnν = ν̂ .- 1
-scatter(vec(dlnMA), vec(dlnν), 
+scatter(vec(dMA), vec(dlnν), 
     marker_z = vec(wⱼ),
     color = :RdBu,
     colorbar = true,
     colorbar_title = "wⱼ",
-    xlabel = "log of dlnMA", 
+    xlabel = "log of dMA", 
     ylabel = "dlnν",
     title = "Labor Market Power Change vs Market Access Change",
     legend = false,
