@@ -82,13 +82,19 @@ println("Model moment sample firms: ", sum(moment_firm_mask), "/", J,
 
 α = 0.4
 β_target = [-0.092242, 0.0939565]
-η_bounds = [0.25, 15.0]
-θ_bounds = [0.25, 8.0]
+η_bounds = [0.005, 0.25]
+θ_bounds = [0.25, 5.0]
 employment_change = :log
 wage_center = :all
 
-# use grid search to find good starting points for the optimization
-η_grid = [1.5, 3.0, 4.5, 6.0, 7.5]
+# use grid search to find good starting points for the optimization.
+# d is measured in minutes, so η is now a per-minute disutility. The grid
+# translates the old log-commute scale using typical model commutes around
+# 70 minutes, with extra support around the diagnostic best region.
+η_grid = [0.02, 0.04, 0.05, 0.06, 0.08, 0.10, 0.12, 0.16, 0.20]
+# With inverted firm amenities, θ is weakly identified by these two moments.
+# If the best point sits near this cap, treat the cap as an identifying restriction
+# and revisit the target moments or add an external labor-supply elasticity target.
 θ_grid = [0.75, 1.5, 2.5, 3.5, 4.5]
 grid_results = EvaluateCalibrationGrid(;
     l, d, d′, wⱼ_data, lⱼ_data, α, β_target,
@@ -114,18 +120,20 @@ println()
 
 calibration_starts = [[row.η, row.θ] for row in eachrow(top_grid)]
 
+
 # based on the grid search results, we choose a good starting point for the optimization
-x0 = [8.0, 0.75]
+x0 = nothing
+calibration_starts = [[0.05, 4.5], [0.16, 0.75]]
 calibration = CalibrateEtaTheta(;
     l, d, d′, wⱼ_data, lⱼ_data, α, β_target,
     aⱼ_init,
     x0,
-    starts = [x0],
+    starts = calibration_starts,
     lower = [η_bounds[1], θ_bounds[1]],
     upper = [η_bounds[2], θ_bounds[2]],
-    iterations = 250,
-    x_abstol = 1e-4,
-    f_reltol = 1e-8,
+    iterations = 40,
+    x_abstol = 1e-3,
+    f_reltol = 1e-5,
     inner_tol = 1e-5,
     inner_maxIter = 3000,
     continuation_steps = 5,
@@ -163,8 +171,8 @@ println("Estimated θ: ", θ_est)
 #==================================================#
 
 α = 0.4
-η = 8.0; # commute-wage elasticity
-θ = 0.7560388103691049; # 
+η = η_est; # commuting-time disutility per minute
+θ = θ_est; # preference dispersion / responsiveness
 
 # Solve firm amenities and productivity from observed employment and wages
 vars = (; wⱼ = wⱼ_data, lⱼ = lⱼ_data, l, d)
@@ -198,7 +206,6 @@ dlnlⱼ = log.(max.(lⱼ′, eps(Float64))) .- log.(max.(lⱼ, eps(Float64)));
 dMA = sum((d - d′) .* l, dims = 1)' |> x -> replace(x, -Inf => -8);
 # density(dMA, title="Kernel Density Estimate of dMA", xlabel="dMA", ylabel="Density", legend=false)
 bigMA = Float64.(dMA .>= 0.5);
-ln_dMA = log.(sum((d - d′) .* l, dims = 1)') |> x -> replace(x, -Inf => -8)
 
 regDF = DataFrame(
     bigMA = vec(bigMA)[moment_firm_mask],
@@ -235,12 +242,12 @@ w_color_clims = (-w_color_limit, w_color_limit)
 # labor
 begin
     sorted_idx = sortperm(vec(wⱼ))
-    scatter(vec(ln_dMA)[sorted_idx], vec(clamp.(dlnlⱼ, -Inf, 5))[sorted_idx], 
+    scatter(vec(dMA)[sorted_idx], vec(clamp.(dlnlⱼ, -Inf, 5))[sorted_idx],
         marker_z = vec(wⱼ)[sorted_idx],
         color = :RdBu,
         colorbar = true,
         colorbar_title = "ln wⱼ - mean(ln wⱼ)",
-        xlabel = "ln(dMA)", 
+        xlabel = "dMA (minutes)",
         ylabel = "dlnlⱼ",
         title = "Employment Change vs Market Access Change",
         legend = false,
@@ -251,13 +258,13 @@ end
 
 begin
     sorted_idx = sortperm(plot_w_color)
-    scatter(vec(ln_dMA)[sorted_idx], vec(dlnlⱼ)[sorted_idx], 
+    scatter(vec(dMA)[sorted_idx], vec(dlnlⱼ)[sorted_idx],
         marker_z = clamp.(plot_w_color[sorted_idx], w_color_clims...),
         clims = w_color_clims,
         color = :RdBu,
         colorbar = true,
         colorbar_title = "ln wⱼ - mean",
-        xlabel = "ln(dMA)", 
+        xlabel = "dMA (minutes)",
         ylabel = "dlnlⱼ",
         title = "Employment Change vs Market Access Change",
         legend = false,

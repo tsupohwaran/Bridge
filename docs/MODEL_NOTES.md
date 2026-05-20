@@ -1,6 +1,6 @@
 # Model Notes
 
-Last updated: 2026-05-18.
+Last updated: 2026-05-20.
 
 This document summarizes the structural model as read from current Julia code and draft notes. It distinguishes the current implemented model from older or richer draft formulations.
 
@@ -13,12 +13,12 @@ Verified:
   - `j`: firm.
 - Inputs:
   - `l_z`: residence population, normalized to sum to 1.
-  - `d_zj`: commuting time from residence `z` to firm `j`.
+  - `d_zj`: commuting time from residence `z` to firm `j`, measured in minutes.
   - `w_j`: firm wage.
   - `a_j`: firm-level non-pecuniary amenity, implemented as an additive utility shifter and inverted from observed firm employment.
   - `z_j`: firm productivity, backed out from observed wages.
   - `α`: decreasing returns parameter, set to `0.4` in `main.jl`.
-  - `η`: commuting-cost elasticity.
+  - `η`: commuting-time disutility per minute.
   - `θ`: preference dispersion / responsiveness parameter.
 
 ## Worker Choice
@@ -27,21 +27,21 @@ Verified:
 - Current Julia code corresponds to worker utility:
 
 ```text
-U_izj = ln(w_j) + a_j - η ln(d_zj) + (1/θ) ε_ij
+U_izj = ln(w_j) + a_j - η d_zj + (1/θ) ε_ij
 ```
 
 - Current Julia code implies:
 
 ```text
-π_zj = exp(θ [ln(w_j) + a_j - η ln(d_zj)])
-       / sum_k exp(θ [ln(w_k) + a_k - η ln(d_zk)])
+π_zj = exp(θ [ln(w_j) + a_j - η d_zj])
+       / sum_k exp(θ [ln(w_k) + a_k - η d_zk])
 ```
 
 - Equivalently:
 
 ```text
-π_zj = (w_j exp(a_j) d_zj^(-η))^θ
-       / sum_k (w_k exp(a_k) d_zk^(-η))^θ
+π_zj = (w_j exp(a_j - η d_zj))^θ
+       / sum_k (w_k exp(a_k - η d_zk))^θ
 ```
 
 - Firm labor is:
@@ -54,7 +54,7 @@ Inferred:
 - Lower commuting time raises the attractiveness of a firm for workers in affected origins.
 - Higher firm amenity raises a firm's attractiveness independently of wages and commuting time.
 - Higher `θ` makes worker allocation more sensitive to wage/commuting differences.
-- Higher `η` makes commuting time more important.
+- Higher `η` makes each additional commuting minute more costly in utility.
 
 Uncertain:
 - Whether worker residence `z` should be interpreted strictly as town residence population, town government point, or a market-access proxy location.
@@ -132,10 +132,15 @@ Verified:
 ```text
 α = 0.4
 β_target = [-0.092242, 0.0939565]
-x0 = [1, 4.8]
+η_bounds = [0.005, 0.25]
+η_grid = [0.02, 0.04, 0.05, 0.06, 0.08, 0.10, 0.12, 0.16, 0.20]
+θ_bounds = [0.25, 5.0]
+θ_grid = [0.75, 1.5, 2.5, 3.5, 4.5]
+x0 = nothing
 ```
 
-- It optimizes over `[η, θ]` using `Optim.NelderMead()`.
+- It optimizes over `[η, θ]` using `Optim.NelderMead()`, starting from the best grid-search points.
+- With firm amenities inverted from baseline employment, `θ` is weakly identified by the current two moments. If the local optimizer pushes `θ` to the upper bound, interpret this as a boundary solution rather than a precise interior estimate.
 - For each candidate `[η, θ]`, `functions.jl` inverts firm amenities and productivity from baseline observed employment and wages:
 
 ```text
