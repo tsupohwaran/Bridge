@@ -1,6 +1,6 @@
 # Model Notes
 
-Last generated: 2026-05-07.
+Last updated: 2026-05-18.
 
 This document summarizes the structural model as read from current Julia code and draft notes. It distinguishes the current implemented model from older or richer draft formulations.
 
@@ -15,6 +15,7 @@ Verified:
   - `l_z`: residence population, normalized to sum to 1.
   - `d_zj`: commuting time from residence `z` to firm `j`.
   - `w_j`: firm wage.
+  - `a_j`: firm-level non-pecuniary amenity, implemented as an additive utility shifter and inverted from observed firm employment.
   - `z_j`: firm productivity, backed out from observed wages.
   - `α`: decreasing returns parameter, set to `0.4` in `main.jl`.
   - `η`: commuting-cost elasticity.
@@ -23,16 +24,24 @@ Verified:
 ## Worker Choice
 
 Verified:
-- Draft notes define worker utility as:
+- Current Julia code corresponds to worker utility:
 
 ```text
-U_izj = ln(w_j) - η ln(d_zj) + (1/θ) ε_ij
+U_izj = ln(w_j) + a_j - η ln(d_zj) + (1/θ) ε_ij
 ```
 
 - Current Julia code implies:
 
 ```text
-π_zj = (w_j d_zj^(-η))^θ / sum_k (w_k d_zk^(-η))^θ
+π_zj = exp(θ [ln(w_j) + a_j - η ln(d_zj)])
+       / sum_k exp(θ [ln(w_k) + a_k - η ln(d_zk)])
+```
+
+- Equivalently:
+
+```text
+π_zj = (w_j exp(a_j) d_zj^(-η))^θ
+       / sum_k (w_k exp(a_k) d_zk^(-η))^θ
 ```
 
 - Firm labor is:
@@ -43,11 +52,13 @@ l_j = sum_z π_zj l_z
 
 Inferred:
 - Lower commuting time raises the attractiveness of a firm for workers in affected origins.
+- Higher firm amenity raises a firm's attractiveness independently of wages and commuting time.
 - Higher `θ` makes worker allocation more sensitive to wage/commuting differences.
 - Higher `η` makes commuting time more important.
 
 Uncertain:
 - Whether worker residence `z` should be interpreted strictly as town residence population, town government point, or a market-access proxy location.
+- Whether the final paper should describe `a_j` as firm amenities, compensating differentials, residual firm attractiveness, or another term.
 
 ## Labor Supply Elasticity And Markdown
 
@@ -66,7 +77,8 @@ Verified:
 
 Inferred:
 - If a firm draws many workers whose outside options are weak or hard to reach, its effective labor supply elasticity is lower and its labor-market power is higher.
-- A bridge changes `π_zj`, `γ_zj`, and `ε_j`, so it can change firm markdowns even without changing productivity.
+- A bridge changes `π_zj`, `γ_zj`, and `ε_j`, so it can change firm markdowns even without changing productivity or amenities.
+- Holding `a_j` fixed in counterfactuals, the wage elasticity formula is unchanged; amenities enter through worker choice probabilities and worker-origin composition.
 
 Uncertain:
 - The documentation should settle whether `ν_j = 1 + 1/ε_j` is called markdown, inverse markdown, monopsony wedge, or labor-market power.
@@ -91,6 +103,7 @@ w_j = α z_j l_j^(α - 1) ε_j / (1 + ε_j)
 Inferred:
 - This is a monopsonistic labor-market condition: the wage is marginal product times an elasticity adjustment.
 - Lower `ε_j` means a larger wedge between marginal product and wage.
+- Firm amenities do not enter the wage first-order condition directly in the current code; they affect equilibrium wages through `π_zj`, `l_j`, and `ε_j`.
 
 Uncertain:
 - Product prices `P_j` appear in draft notes but are normalized away in current code.
@@ -118,11 +131,20 @@ Verified:
 
 ```text
 α = 0.4
-β_target = [-0.052, 0.085]
-x0 = [2.75, 2.0]
+β_target = [-0.092242, 0.0939565]
+x0 = [1, 4.8]
 ```
 
 - It optimizes over `[η, θ]` using `Optim.NelderMead()`.
+- For each candidate `[η, θ]`, `functions.jl` inverts firm amenities and productivity from baseline observed employment and wages:
+
+```text
+Find a_j such that l_j_data = sum_z π_zj(w_data, a, d) l_z
+Normalize mean_j(a_j) = 0
+z_j = w_j_data (1 + ε_j) / [α l_j_data^(α - 1) ε_j]
+```
+
+- `main.jl` uses `a_j = 0` only as the starting guess for the amenity inversion.
 - `ComputeModelMoments` solves the model before and after the travel-time change, appends baseline and counterfactual firm outcomes as two periods, constructs `post`, `bigMA`, and baseline wage heterogeneity `w_diff`, and estimates the two-period DID moment analogue of:
 
 ```text
@@ -141,8 +163,9 @@ Inferred:
 - The calibration tries to make model-generated labor reallocation match reduced-form employment heterogeneity by market-access treatment and initial wage.
 
 Uncertain:
-- The origin of `β_target = [-0.052, 0.085]` is not documented.
+- The origin of `β_target = [-0.092242, 0.0939565]` is not documented.
 - Historical notes contain several different empirical estimates; the target moments need confirmation.
+- The preferred economic interpretation and reporting normalization for inverted firm amenities need confirmation.
 
 ## Draft Model Variants
 
@@ -168,6 +191,7 @@ Uncertain:
 Inferred:
 - The bridge reduces commuting costs for some firm-origin pairs.
 - Workers reallocate toward firms made more attractive by shorter commutes and/or higher wages.
+- Workers also reallocate toward higher-amenity firms if nonzero amenities are supplied.
 - High-wage firms may attract more distant workers after the bridge, changing their worker-origin composition.
 - Worker-origin composition affects firm labor supply elasticity.
 - Changes in firm labor supply elasticity affect labor-market power / markdowns and wages.
@@ -182,6 +206,8 @@ Verified:
 - Current `data/model/processed/firm_qingdao_model.dta` lacks variables needed by `main.jl`.
 - `model_output.jl` appears incompatible with the current model functions.
 - `calibration.jl` is a placeholder with undefined empirical moments.
+- `functions.jl` now solves firm amenities from `l_j_data` and firm productivity from `w_j_data` for each calibration parameter guess.
+- Direct calls to `SolveModel` and `SolveZfromW` now require `a_j` in `vars`; there is no zero-amenity fallback inside the solver.
 
 Inferred:
 - Run `main.jl` only after confirming generated market-access files and model input variables are current.

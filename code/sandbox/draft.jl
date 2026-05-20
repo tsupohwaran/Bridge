@@ -1,3 +1,2 @@
-@show size(df)
-@show count(ismissing, df[!, :employ])
-@show findfirst(ismissing, df[!, :employ])
+SumStats(dlnlⱼ, "dlnlⱼ")
+findall(dlnlⱼ .> 0)

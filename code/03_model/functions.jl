@@ -48,6 +48,88 @@ end
 # For convenience. This function is used to sum over the specified dimensions and drop them.
 sumsqueeze(A; dims) = dropdims(sum(A, dims=dims), dims=dims)
 
+function WorkerChoice(wⱼ, l, d, aⱼ, params::NamedTuple; log_d=nothing)
+    (; η, θ) = params
+    J = size(d, 2)
+    length(wⱼ) == J || error("wⱼ must have length $J")
+    length(aⱼ) == J || error("aⱼ must have length $J")
+    any(ismissing, wⱼ) && error("wⱼ cannot contain missing values")
+    any(ismissing, aⱼ) && error("aⱼ cannot contain missing values")
+
+    wⱼ = wⱼ isa Vector{Float64} ? wⱼ : vec(Float64.(wⱼ))
+    aⱼ = aⱼ isa Vector{Float64} ? aⱼ : vec(Float64.(aⱼ))
+    log_d = isnothing(log_d) ? log.(d) : log_d
+
+    # Use log-sum-exp trick for numerical stability
+    log_xzj = θ .* (log.(wⱼ') .+ aⱼ' .- η .* log_d)  # Z × J matrix
+    log_xzj_max = maximum(log_xzj, dims=2)  # Z × 1
+    log_sum_exp = log_xzj_max .+ log.(sum(exp.(log_xzj .- log_xzj_max), dims=2))
+    π_zj = exp.(log_xzj .- log_sum_exp)
+    
+    ε_zj = θ .* (1 .- π_zj)
+    lⱼ = sum(π_zj .* l, dims = 1)'
+    εⱼ = sumsqueeze(π_zj .* l ./ lⱼ' .* ε_zj, dims = 1)
+
+    return (; π_zj, ε_zj, lⱼ, εⱼ)
+end
+
+function SolveAmenitiesFromEmployment(vars::NamedTuple, params::NamedTuple;
+    aⱼ_init=nothing, tol=1e-10, maxIter=5000, damp=0.5,
+    displayGap=false, displaySummary=false, returnInfo=false)
+
+    (; wⱼ, l, d, lⱼ) = vars
+    (; θ) = params
+    J = size(d, 2)
+    θ > 0 || error("θ must be positive")
+    length(lⱼ) == J || error("lⱼ must have length $J")
+    any(ismissing, lⱼ) && error("lⱼ cannot contain missing values")
+
+    lⱼ_target = vec(Float64.(lⱼ))
+    any(lⱼ_target .<= 0) && error("lⱼ must be strictly positive to invert finite amenities")
+    logq = isnothing(aⱼ_init) ? zeros(J) : θ .* vec(Float64.(aⱼ_init))
+    length(logq) == J || error("aⱼ_init must have length $J")
+    logq .-= mean(logq)
+    log_d = log.(d)
+
+    iter = 0
+    gap = Inf
+    while (iter < maxIter) && (gap > tol)
+        iter += 1
+        aⱼ = logq ./ θ
+        choice = WorkerChoice(wⱼ, l, d, aⱼ, params; log_d)
+        lⱼ_model = vec(choice.lⱼ)
+        gap = maximum(abs.(lⱼ_model .- lⱼ_target))
+        gap <= tol && break
+
+        update = log.(lⱼ_target) .- log.(max.(lⱼ_model, eps(Float64)))
+        logq_new = logq .+ update
+        logq_new .-= mean(logq_new)
+        logq = damp .* logq .+ (1 - damp) .* logq_new
+        logq .-= mean(logq)
+
+        if displayGap
+            println("Amenity inversion iteration: ", iter, ", Gap: ", gap)
+        end
+    end
+
+    aⱼ = logq ./ θ
+    aⱼ .-= mean(aⱼ)
+    choice = WorkerChoice(wⱼ, l, d, aⱼ, params; log_d)
+    gap = maximum(abs.(vec(choice.lⱼ) .- lⱼ_target))
+    converged = gap <= tol
+
+    if displaySummary
+        if converged
+            println("Successful amenity inversion in ", iter, " iterations. Final gap: ", gap)
+        else
+            println("Amenity inversion reached max iterations. Final gap: ", gap)
+        end
+    end
+
+    info = (; aⱼ, lⱼ_target, choice..., converged, iterations = iter, gap)
+    return returnInfo ? info : aⱼ
+end
+
 # For convenience. This function is used to check if there are any invalid elements (NaN, Missing, Inf) in the array and
 # return the positions of these elements.
 function CheckElements(array; position::Bool = false)
@@ -158,24 +240,18 @@ function SolveModel(vars::NamedTuple, params::NamedTuple;
     returnInfo=false)  # optional warm start
 
     # unpack the data
-    (; l, d, zⱼ) = vars
+    (; l, d, zⱼ, aⱼ) = vars
     (; η, θ, α) = params
 
     # initial guess (use warm start if provided)
     J_local = size(d, 2)
     wⱼ = isnothing(wⱼ_init) ? ones(J_local) : copy(wⱼ_init)
+    log_d = log.(d)
 
     # update rule
     function UpdateRule(wⱼ)
-        # Use log-sum-exp trick for numerical stability
-        log_xzj = θ .* (log.(wⱼ') .- η .* log.(d))  # Z × J matrix
-        log_xzj_max = maximum(log_xzj, dims=2)  # Z × 1
-        log_sum_exp = log_xzj_max .+ log.(sum(exp.(log_xzj .- log_xzj_max), dims=2))
-        π_zj = exp.(log_xzj .- log_sum_exp)
-        
-        ε_zj = θ .* (1 .- π_zj)
-        lⱼ = sum(π_zj .* l, dims = 1)'
-        εⱼ = sumsqueeze(π_zj .* l ./ lⱼ' .* ε_zj, dims = 1)
+        choice = WorkerChoice(wⱼ, l, d, aⱼ, params; log_d)
+        π_zj, ε_zj, lⱼ, εⱼ = choice.π_zj, choice.ε_zj, choice.lⱼ, choice.εⱼ
 
         wⱼ = α .* zⱼ .* lⱼ .^ (α - 1) .* εⱼ ./ (1 .+ εⱼ)
         wⱼ = wⱼ ./ sum(wⱼ .* lⱼ) # normalize total wage bill to 1
@@ -205,55 +281,85 @@ function SolveModel(vars::NamedTuple, params::NamedTuple;
     return solution
 end
 
+function SolveFirmPrimitivesFromData(vars::NamedTuple, params::NamedTuple;
+    aⱼ_init=nothing, amenity_tol=1e-10, amenity_maxIter=5000, amenity_damp=0.5,
+    displayGap=false, displaySummary=false, returnInfo=true)
+
+    (; wⱼ, l, d, lⱼ) = vars
+    (; α) = params
+
+    amenity = SolveAmenitiesFromEmployment((; wⱼ, l, d, lⱼ), params;
+        aⱼ_init, tol=amenity_tol, maxIter=amenity_maxIter, damp=amenity_damp,
+        displayGap, displaySummary, returnInfo=true)
+
+    lⱼ = amenity.lⱼ
+    εⱼ = amenity.εⱼ
+    zⱼ = wⱼ .* (1 .+ εⱼ) ./ (α .* lⱼ .^ (α - 1) .* εⱼ)
+    zⱼ = zⱼ ./ mean(zⱼ) # normalize zⱼ to have mean 1
+
+    solution = (;
+        zⱼ,
+        aⱼ = amenity.aⱼ,
+        π_zj = amenity.π_zj,
+        ε_zj = amenity.ε_zj,
+        lⱼ,
+        εⱼ,
+        lⱼ_target = amenity.lⱼ_target,
+        amenity_converged = amenity.converged,
+        amenity_iterations = amenity.iterations,
+        amenity_gap = amenity.gap
+    )
+
+    return returnInfo ? solution : (zⱼ, amenity.aⱼ)
+end
+
 # Solve zⱼ from observed wⱼ
 function SolveZfromW(vars::NamedTuple, params::NamedTuple)
 
     # unpack the data
-    (; wⱼ, l, d) = vars
+    (; wⱼ, l, d, aⱼ) = vars
     (; η, θ, α) = params
 
-    # Use log-sum-exp trick for numerical stability
-    log_xzj = θ .* (log.(wⱼ') .- η .* log.(d))  # Z × J matrix
-    log_xzj_max = maximum(log_xzj, dims=2)  # Z × 1
-    log_sum_exp = log_xzj_max .+ log.(sum(exp.(log_xzj .- log_xzj_max), dims=2))
-    π_zj = exp.(log_xzj .- log_sum_exp)
-    
-    ε_zj = θ .* (1 .- π_zj)
-    lⱼ = sum(π_zj .* l, dims = 1)'
-    εⱼ = sumsqueeze(π_zj .* l ./ lⱼ' .* ε_zj, dims = 1)
+    choice = WorkerChoice(wⱼ, l, d, aⱼ, params; log_d = log.(d))
+    lⱼ, εⱼ = choice.lⱼ, choice.εⱼ
 
     zⱼ = wⱼ .* (1 .+ εⱼ) ./ (α .* lⱼ .^ (α - 1) .* εⱼ)
     zⱼ = zⱼ ./ mean(zⱼ) # normalize zⱼ to have mean 1
     return zⱼ
 end
 
-function EstimateTwoPeriodDIDMoments(regDF::DataFrame)
-    # Equivalent to:
-    # reghdfe lnl i1.bigMA#i1.post c.w_diff#i1.bigMA#i1.post,
-    #     absorb(id year c.w_diff#year)
-    # for a balanced two-period panel. The code below applies the
-    # Frisch-Waugh-Lovell residualization implied by these absorbed effects.
-    baseline = sort(regDF[regDF.post .== 0, :], :id)
-    counterfactual = sort(regDF[regDF.post .== 1, :], :id)
+function EstimateTwoPeriodDIDMoments(lnl_base, lnl_counterfactual, bigMA, w;
+    wage_center=:treated, keep=nothing)
 
-    if nrow(baseline) != nrow(counterfactual) || !all(baseline.id .== counterfactual.id)
-        return [Inf, Inf]
+    J = length(w)
+    length(lnl_base) == J || error("lnl_base must have length $J")
+    length(lnl_counterfactual) == J || error("lnl_counterfactual must have length $J")
+    length(bigMA) == J || error("bigMA must have length $J")
+
+    keep_mask = isnothing(keep) ? trues(J) : Bool.(keep)
+    length(keep_mask) == J || error("keep must have length $J")
+
+    Δlnl = Float64.(vec(lnl_counterfactual)[keep_mask] .- vec(lnl_base)[keep_mask])
+    bigMA_keep = Float64.(vec(bigMA)[keep_mask])
+    w_keep = Float64.(vec(w)[keep_mask])
+
+    if wage_center == :treated
+        treated = bigMA_keep .== 1
+        w_center = any(treated) ? mean(w_keep[treated]) : mean(w_keep)
+    elseif wage_center == :all
+        w_center = mean(w_keep)
+    else
+        error("wage_center must be :treated or :all")
     end
+    w_diff = w_keep .- w_center
 
-    # Firm FE residualization in a two-period panel is equivalent to taking
-    # firm-level changes. This is a transformation of the lnl regression, not a
-    # different dependent-variable specification.
-    Δlnl = Float64.(counterfactual.lnl .- baseline.lnl)
-    bigMA = Float64.(baseline.bigMA)
-    w_diff = Float64.(baseline.w_diff)
     X_absorb = hcat(ones(length(Δlnl)), w_diff)
-    X_target = hcat(bigMA, w_diff .* bigMA)
+    X_target = hcat(bigMA_keep, w_diff .* bigMA_keep)
 
     if rank(X_absorb) < size(X_absorb, 2)
         return [Inf, Inf]
     end
 
-    # FWL residualization
     y_resid = Δlnl - X_absorb * (X_absorb \ Δlnl)
     X_resid = X_target - X_absorb * (X_absorb \ X_target)
 
@@ -289,6 +395,7 @@ end
 
 # Compute model moments given parameters
 function ComputeModelMoments(params_to_estimate; l, d, d′, wⱼ_data, lⱼ_data, α,
+    aⱼ_init=nothing, amenity_tol=1e-10, amenity_maxIter=5000, amenity_damp=0.5,
     inner_tol=1e-5, inner_maxIter=3000, inner_display=false, require_convergence=true,
     continuation_steps=5, employment_change=:log, wage_center=:treated,
     moment_firm_mask=nothing, firm_ids=nothing, reg_sample_ids=nothing,
@@ -301,33 +408,32 @@ function ComputeModelMoments(params_to_estimate; l, d, d′, wⱼ_data, lⱼ_dat
         return [Inf, Inf]
     end
     
-    # Higher θ can make the fixed point sharper. The baseline is anchored by
-    # observed wages, while the bridge counterfactual needs more damping.
-    damp_base = clamp(0.45 + 0.04 * θ, 0.55, 0.85)
+    # Higher θ can make the counterfactual fixed point sharper, so use more damping.
     damp_cf = clamp(0.65 + 0.085 * θ, 0.75, 0.97)
     
     params = (; η, θ, α)
     
-    # Step 2a: Invert for zⱼ given current (η, θ)
-    vars = (; wⱼ = wⱼ_data, l, d)
-    zⱼ = SolveZfromW(vars, params)
+    # Step 2a: Invert for firm amenities and productivity using observed
+    # employment and wage in the baseline data.
+    primitives = SolveFirmPrimitivesFromData((; wⱼ = wⱼ_data, lⱼ = lⱼ_data, l, d), params;
+        aⱼ_init, amenity_tol, amenity_maxIter, amenity_damp,
+        displaySummary=inner_display, returnInfo=true)
+    zⱼ, aⱼ = primitives.zⱼ, primitives.aⱼ
+    if require_convergence && !primitives.amenity_converged
+        return [Inf, Inf]
+    end
     
     # Check for invalid zⱼ
-    if any(isnan.(zⱼ)) || any(isinf.(zⱼ))
+    if any(isnan.(zⱼ)) || any(isinf.(zⱼ)) || any(isnan.(aⱼ)) || any(isinf.(aⱼ))
         return [Inf, Inf]
     end
     
-    # Step 2b: Solve baseline model with incremental continuation for high θ
-    vars_base = (; l, d, zⱼ)
-    # zⱼ is backed out from wⱼ_data, so use wⱼ_data as the anchor for the baseline solve.
-    base = SolveModel(vars_base, params;
-        damp=damp_base, tol=inner_tol, power=false, maxIter=inner_maxIter,
-        wⱼ_init=wⱼ_data, displaySummary=inner_display, returnInfo=true)
-    wⱼ, π_zj, ε_zj, lⱼ, εⱼ = base.wⱼ, base.π_zj, base.ε_zj, base.lⱼ, base.εⱼ
-
-    if require_convergence && !base.converged
-        return [Inf, Inf]
-    end
+    # Step 2b: Use the inverted baseline directly. By construction, the
+    # inverted amenities match lⱼ_data and the normalized productivity makes
+    # wⱼ_data satisfy the baseline wage FOC, so a separate baseline fixed point
+    # solve is redundant on the calibration path.
+    wⱼ = vec(Float64.(wⱼ_data))
+    lⱼ = vec(Float64.(primitives.lⱼ))
     
     # Check for invalid wages
     if any(isnan.(wⱼ)) || any(isinf.(wⱼ))
@@ -343,7 +449,7 @@ function ComputeModelMoments(params_to_estimate; l, d, d′, wⱼ_data, lⱼ_dat
     for step in 1:continuation_steps
         path_share = step / continuation_steps
         d_path = exp.((1 - path_share) .* log_d .+ path_share .* log_d′)
-        vars_cf = (; l, d = d_path, zⱼ)
+        vars_cf = (; l, d = d_path, zⱼ, aⱼ)
         if inner_display && continuation_steps > 1
             println("Counterfactual continuation step ", step, "/", continuation_steps)
         end
@@ -357,7 +463,7 @@ function ComputeModelMoments(params_to_estimate; l, d, d′, wⱼ_data, lⱼ_dat
 
         wⱼ_cf_init = cf.wⱼ
     end
-    wⱼ′, π_zj′, ε_zj′, lⱼ′, εⱼ′ = cf.wⱼ, cf.π_zj, cf.ε_zj, cf.lⱼ, cf.εⱼ
+    wⱼ′, lⱼ′ = cf.wⱼ, cf.lⱼ
 
     # Check for invalid counterfactual wages
     if any(isnan.(wⱼ′)) || any(isinf.(wⱼ′))
@@ -367,53 +473,21 @@ function ComputeModelMoments(params_to_estimate; l, d, d′, wⱼ_data, lⱼ_dat
     # Step 2d: Compute regression moments from appended two-period firm data.
     # employment_change is kept in the signature for caller compatibility; this
     # DID specification uses log employment levels, matching the lnl outcome.
-    dMA = sum((d - d′) .* l, dims = 1)' |> x -> replace(x, -Inf => -8)
+    dMA = vec(l' * d .- l' * d′) |> x -> replace(x, -Inf => -8)
     bigMA = Float64.(dMA .>= 0.5)
     
     w = vec(log.(max.(wⱼ, eps(Float64))))
     keep = MomentFirmMask(length(w); moment_firm_mask, firm_ids, reg_sample_ids,
         restrict_to_reg_sample)
+    lnl = vec(log.(max.(lⱼ, eps(Float64))))
+    lnl′ = vec(log.(max.(lⱼ′, eps(Float64))))
 
-    regDF_firm = DataFrame(
-        id = collect(1:length(w))[keep],
-        bigMA = vec(bigMA)[keep],
-        w = w[keep]
-    )
-    if wage_center == :treated
-        treated = regDF_firm.bigMA .== 1
-        w_center = any(treated) ? mean(regDF_firm[treated, :w]) : mean(regDF_firm[!, :w])
-    elseif wage_center == :all
-        w_center = mean(regDF_firm[!, :w])
-    else
-        error("wage_center must be :treated or :all")
-    end
-    regDF_firm.w_diff = regDF_firm.w .- w_center
-
-    J = nrow(regDF_firm)
-    regDF = vcat(
-        DataFrame(
-            id = regDF_firm.id,
-            year = zeros(Int, J),
-            post = zeros(Int, J),
-            bigMA = regDF_firm.bigMA,
-            w_diff = regDF_firm.w_diff,
-            lnl = vec(log.(max.(lⱼ, eps(Float64))))[keep]
-        ),
-        DataFrame(
-            id = regDF_firm.id,
-            year = ones(Int, J),
-            post = ones(Int, J),
-            bigMA = regDF_firm.bigMA,
-            w_diff = regDF_firm.w_diff,
-            lnl = vec(log.(max.(lⱼ′, eps(Float64))))[keep]
-        )
-    )
-
-    return EstimateTwoPeriodDIDMoments(regDF)
+    return EstimateTwoPeriodDIDMoments(lnl, lnl′, bigMA, w; wage_center, keep)
 end
 
 # Objective function for estimation
 function ObjectiveFunction(params_to_estimate; l, d, d′, wⱼ_data, lⱼ_data, α, β_target,
+    aⱼ_init=nothing, amenity_tol=1e-10, amenity_maxIter=5000, amenity_damp=0.5,
     verbose=false, inner_tol=1e-5, inner_maxIter=3000, inner_display=false,
     require_convergence=true, continuation_steps=5, employment_change=:log,
     wage_center=:treated, max_abs_moment=10.0, moment_firm_mask=nothing,
@@ -426,7 +500,9 @@ function ObjectiveFunction(params_to_estimate; l, d, d′, wⱼ_data, lⱼ_data,
     end
     
     β_model = ComputeModelMoments(params_to_estimate; l, d, d′, wⱼ_data, lⱼ_data, α,
-        inner_tol=inner_tol, inner_maxIter=inner_maxIter, inner_display=inner_display,
+        aⱼ_init=aⱼ_init, amenity_tol=amenity_tol, amenity_maxIter=amenity_maxIter,
+        amenity_damp=amenity_damp, inner_tol=inner_tol, inner_maxIter=inner_maxIter,
+        inner_display=inner_display,
         require_convergence=require_convergence, continuation_steps=continuation_steps,
         employment_change=employment_change, wage_center=wage_center,
         moment_firm_mask=moment_firm_mask, firm_ids=firm_ids,
@@ -450,6 +526,7 @@ end
 
 function EvaluateCalibrationGrid(; l, d, d′, wⱼ_data, lⱼ_data, α, β_target,
     η_grid, θ_grid, inner_tol=2e-5, inner_maxIter=3000,
+    aⱼ_init=nothing, amenity_tol=1e-10, amenity_maxIter=5000, amenity_damp=0.5,
     continuation_steps=5, employment_change=:log, wage_center=:treated,
     max_abs_moment=10.0, verbose=true, moment_firm_mask=nothing,
     firm_ids=nothing, reg_sample_ids=nothing, restrict_to_reg_sample::Bool=false)
@@ -469,7 +546,8 @@ function EvaluateCalibrationGrid(; l, d, d′, wⱼ_data, lⱼ_data, α, β_targ
         β_model = ComputeModelMoments([η, θ]; l, d, d′, wⱼ_data, lⱼ_data, α,
             inner_tol=inner_tol, inner_maxIter=inner_maxIter,
             inner_display=false, require_convergence=true,
-            continuation_steps=continuation_steps,
+            aⱼ_init=aⱼ_init, amenity_tol=amenity_tol, amenity_maxIter=amenity_maxIter,
+            amenity_damp=amenity_damp, continuation_steps=continuation_steps,
             employment_change=employment_change, wage_center=wage_center,
             moment_firm_mask=moment_firm_mask, firm_ids=firm_ids,
             reg_sample_ids=reg_sample_ids, restrict_to_reg_sample=restrict_to_reg_sample)
@@ -503,6 +581,7 @@ end
 function CalibrateEtaTheta(; l, d, d′, wⱼ_data, lⱼ_data, α, β_target,
     x0=[2.75, 2.0], starts=nothing, lower=[0.25, 0.25], upper=[8.0, 8.0],
     iterations=250, x_abstol=1e-4, f_reltol=1e-8,
+    aⱼ_init=nothing, amenity_tol=1e-10, amenity_maxIter=5000, amenity_damp=0.5,
     inner_tol=1e-5, inner_maxIter=3000, continuation_steps=5,
     employment_change=:log, wage_center=:treated, max_abs_moment=10.0,
     verbose=true, show_trace=true, moment_firm_mask=nothing, firm_ids=nothing,
@@ -514,7 +593,8 @@ function CalibrateEtaTheta(; l, d, d′, wⱼ_data, lⱼ_data, α, β_target,
     function objective_y(y)
         x = _unconstrained_to_box(y, lower, upper)
         return ObjectiveFunction(x; l, d, d′, wⱼ_data, lⱼ_data, α, β_target,
-            verbose=verbose, inner_tol=inner_tol, inner_maxIter=inner_maxIter,
+            aⱼ_init=aⱼ_init, amenity_tol=amenity_tol, amenity_maxIter=amenity_maxIter,
+            amenity_damp=amenity_damp, verbose=verbose, inner_tol=inner_tol, inner_maxIter=inner_maxIter,
             inner_display=false, require_convergence=true,
             continuation_steps=continuation_steps,
             employment_change=employment_change, wage_center=wage_center,
@@ -523,7 +603,9 @@ function CalibrateEtaTheta(; l, d, d′, wⱼ_data, lⱼ_data, α, β_target,
             restrict_to_reg_sample=restrict_to_reg_sample)
     end
 
-    start_list = isnothing(starts) ? [x0] : starts
+    default_start = isnothing(x0) ? (lower .+ upper) ./ 2 : x0
+    start_list = isnothing(starts) ? [default_start] : starts
+    isempty(start_list) && error("CalibrateEtaTheta requires at least one starting value")
     runs = NamedTuple[]
     best_run = nothing
 
