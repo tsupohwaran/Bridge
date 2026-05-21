@@ -1,6 +1,6 @@
 # AI Project Understanding
 
-Last generated: 2026-05-07.
+Last updated: 2026-05-21.
 
 This document is an AI-readable map of the project as understood from the current repository. It is not a substitute for the paper. Statements are explicitly classified as `Verified`, `Inferred`, or `Uncertain`.
 
@@ -72,7 +72,10 @@ Verified:
   - firm wage condition `w_j = α z_j l_j^(α-1) ε_j / (1 + ε_j)`;
   - markdown/labor market power object `ν_j = 1 + 1 / ε_j`.
 - `main.jl` fixes `α = 0.4` and estimates or sets commuting/preference parameters `η` and `θ`.
-- `main.jl` uses `SolveZfromW` to back out firm productivity `z_j` from observed wages before solving counterfactuals.
+- `main.jl` uses `SolveFirmPrimitivesFromData` to back out firm amenity `a_j` from observed employment and firm productivity `z_j` from observed wages before solving counterfactuals.
+- The final paper should call `a_j` firm amenity, interpret `z` as a region/street/town, and call `ν_j = 1 + 1/ε_j` markdown with `ν_j > 1`.
+- The final model should continue using the current one-level logit structure.
+- Current model-side `bigMA` is fixed as `1[dMA >= 0.5]`, where `dMA` is measured in minutes.
 
 Inferred:
 - `η` is the commuting-cost elasticity in worker utility.
@@ -81,9 +84,9 @@ Inferred:
 - The model is designed to rationalize why market-access improvements affect high- and low-wage firms differently.
 
 Uncertain:
-- Draft notes include a nested structure with parameter `σ`, but current Julia code does not include `σ`.
+- Draft notes include a nested structure with parameter `σ`, but this is historical relative to the current one-level final model.
 - `main.jl` expects `pop`, `dzj`, `dzj_prime`, and `wage_inital`, but the current `data/model/processed/firm_qingdao_model.dta` on disk has only 9 variables and lacks these fields.
-- The exact empirical moments for calibration are unclear; `main.jl` uses `β_target = [-0.052, 0.085]`, but the current notes contain multiple alternative estimates.
+- `β_target = [-0.092242, 0.0939565]` comes from empirical results, but local empirical code may not yet be updated to reproduce those values.
 
 ## Current Repository State
 

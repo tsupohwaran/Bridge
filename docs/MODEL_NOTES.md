@@ -1,6 +1,6 @@
 # Model Notes
 
-Last updated: 2026-05-18.
+Last updated: 2026-05-21.
 
 This document summarizes the structural model as read from current Julia code and draft notes. It distinguishes the current implemented model from older or richer draft formulations.
 
@@ -15,7 +15,7 @@ Verified:
   - `l_z`: residence population, normalized to sum to 1.
   - `d_zj`: commuting time from residence `z` to firm `j`.
   - `w_j`: firm wage.
-  - `a_j`: firm-level non-pecuniary amenity, implemented as an additive utility shifter and inverted from observed firm employment.
+  - `a_j`: firm-level non-pecuniary amenity, called firm amenity in the final paper, implemented as an additive utility shifter and inverted from observed firm employment.
   - `z_j`: firm productivity, backed out from observed wages.
   - `α`: decreasing returns parameter, set to `0.4` in `main.jl`.
   - `η`: commuting-cost elasticity.
@@ -56,9 +56,9 @@ Inferred:
 - Higher `θ` makes worker allocation more sensitive to wage/commuting differences.
 - Higher `η` makes commuting time more important.
 
-Uncertain:
-- Whether worker residence `z` should be interpreted strictly as town residence population, town government point, or a market-access proxy location.
-- Whether the final paper should describe `a_j` as firm amenities, compensating differentials, residual firm attractiveness, or another term.
+Verified:
+- In paper text, `z` should be interpreted strictly as a region, specifically street/town.
+- In the final paper, `a_j` should be called firm amenity.
 
 ## Labor Supply Elasticity And Markdown
 
@@ -80,8 +80,8 @@ Inferred:
 - A bridge changes `π_zj`, `γ_zj`, and `ε_j`, so it can change firm markdowns even without changing productivity or amenities.
 - Holding `a_j` fixed in counterfactuals, the wage elasticity formula is unchanged; amenities enter through worker choice probabilities and worker-origin composition.
 
-Uncertain:
-- The documentation should settle whether `ν_j = 1 + 1/ε_j` is called markdown, inverse markdown, monopsony wedge, or labor-market power.
+Verified:
+- In the paper, `ν_j = 1 + 1/ε_j` should be called markdown, with `ν_j > 1`.
 
 ## Firm Problem
 
@@ -132,7 +132,7 @@ Verified:
 ```text
 α = 0.4
 β_target = [-0.092242, 0.0939565]
-x0 = [1, 4.8]
+x0 = [8.0, 0.75]
 ```
 
 - It optimizes over `[η, θ]` using `Optim.NelderMead()`.
@@ -159,12 +159,14 @@ lnl_jt ~ bigMA_j × post_t + w_diff_j × bigMA_j × post_t
 β2 = coefficient on w_diff × bigMA × post
 ```
 
+- `β_target = [-0.092242, 0.0939565]` comes from empirical results. The local empirical code may not yet be updated to reproduce the corresponding target values; the user will update it later.
+- The final `bigMA` threshold should be fixed at `0.5` minutes.
+- For now, no external labor-supply-elasticity moment or other moment should be added to discipline `θ`.
+
 Inferred:
 - The calibration tries to make model-generated labor reallocation match reduced-form employment heterogeneity by market-access treatment and initial wage.
 
 Uncertain:
-- The origin of `β_target = [-0.092242, 0.0939565]` is not documented.
-- Historical notes contain several different empirical estimates; the target moments need confirmation.
 - The preferred economic interpretation and reporting normalization for inverted firm amenities need confirmation.
 
 ## Draft Model Variants
@@ -183,8 +185,8 @@ Verified:
 Inferred:
 - The current Julia code corresponds to the special or simplified non-nested case.
 
-Uncertain:
-- Whether the final model should be the simplified one-level model or the nested model.
+Verified:
+- The final model should continue using the current one-level logit structure.
 
 ## Mechanism As Currently Understood
 
