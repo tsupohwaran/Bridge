@@ -120,10 +120,9 @@ println()
 
 calibration_starts = [[row.η, row.θ] for row in eachrow(top_grid)]
 
-
 # based on the grid search results, we choose a good starting point for the optimization
 x0 = nothing
-calibration_starts = [[0.05, 4.5], [0.16, 0.75]]
+calibration_starts = [[0.10265332269580334, 1.2432956031750249], [0.045485170676781324, 4.9976954948648915]]
 calibration = CalibrateEtaTheta(;
     l, d, d′, wⱼ_data, lⱼ_data, α, β_target,
     aⱼ_init,
@@ -156,7 +155,10 @@ println("Converged: ", calibration.converged)
 println("Bounds: η ∈ ", η_bounds, ", θ ∈ ", θ_bounds)
 
 # Verify final moments
-β_final = ComputeModelMoments([η_est, θ_est]; l, d, d′, wⱼ_data, lⱼ_data, α,
+β_final = ComputeModelMoments(
+    # [η_est, θ_est];
+    [0.10265332269580334, 1.2432956031750249];
+     l, d, d′, wⱼ_data, lⱼ_data, α,
     aⱼ_init,
     inner_tol = 1e-5, inner_maxIter = 5000, inner_display = true,
     continuation_steps = 5, employment_change, wage_center,
@@ -171,8 +173,8 @@ println("Estimated θ: ", θ_est)
 #==================================================#
 
 α = 0.4
-η = η_est; # commuting-time disutility per minute
-θ = θ_est; # preference dispersion / responsiveness
+η = 0.045485170676781324; # commuting-time disutility per minute
+θ = 4.9976954948648915; # preference dispersion / responsiveness
 
 # Solve firm amenities and productivity from observed employment and wages
 vars = (; wⱼ = wⱼ_data, lⱼ = lⱼ_data, l, d)
@@ -196,7 +198,7 @@ wⱼ, π_zj, ε_zj, lⱼ, εⱼ = SolveModel(vars, params; displayGap = true, da
 
 # solve the model for counterfactual
 vars′ = (; l, d = d′, zⱼ, aⱼ);
-wⱼ′, π_zj′, ε_zj′, lⱼ′, εⱼ′ = SolveModel(vars′, params; displayGap = false, damp = 0.6, tol = 1e-9, displaySummary = true, power = true, wⱼ_init = wⱼ);
+wⱼ′, π_zj′, ε_zj′, lⱼ′, εⱼ′ = SolveModel(vars′, params; displayGap = false, damp = 0.7, tol = 1e-9, displaySummary = true, power = true, wⱼ_init = wⱼ);
 
 
 
@@ -205,7 +207,10 @@ l̂ⱼ = lⱼ′ ./ lⱼ;
 dlnlⱼ = log.(max.(lⱼ′, eps(Float64))) .- log.(max.(lⱼ, eps(Float64)));
 dMA = sum((d - d′) .* l, dims = 1)' |> x -> replace(x, -Inf => -8);
 # density(dMA, title="Kernel Density Estimate of dMA", xlabel="dMA", ylabel="Density", legend=false)
+ln_dMA = log.(sum((d - d′) .* l, dims = 1)') |> x -> replace(x, -Inf => -8)
+
 bigMA = Float64.(dMA .>= 0.5);
+
 
 regDF = DataFrame(
     bigMA = vec(bigMA)[moment_firm_mask],
@@ -241,30 +246,14 @@ w_color_clims = (-w_color_limit, w_color_limit)
 
 # labor
 begin
-    sorted_idx = sortperm(vec(wⱼ))
-    scatter(vec(dMA)[sorted_idx], vec(clamp.(dlnlⱼ, -Inf, 5))[sorted_idx],
-        marker_z = vec(wⱼ)[sorted_idx],
-        color = :RdBu,
-        colorbar = true,
-        colorbar_title = "ln wⱼ - mean(ln wⱼ)",
-        xlabel = "dMA (minutes)",
-        ylabel = "dlnlⱼ",
-        title = "Employment Change vs Market Access Change",
-        legend = false,
-        markersize = 3,
-        alpha = 0.6,
-        dpi = 1000)
-end
-
-begin
     sorted_idx = sortperm(plot_w_color)
-    scatter(vec(dMA)[sorted_idx], vec(dlnlⱼ)[sorted_idx],
+    scatter(vec(ln_dMA)[sorted_idx], vec(dlnlⱼ)[sorted_idx], 
         marker_z = clamp.(plot_w_color[sorted_idx], w_color_clims...),
         clims = w_color_clims,
         color = :RdBu,
         colorbar = true,
-        colorbar_title = "ln wⱼ - mean",
-        xlabel = "dMA (minutes)",
+        colorbar_title = "ln wⱼ - mean(ln wⱼ)",
+        xlabel = "ln(dMA)", 
         ylabel = "dlnlⱼ",
         title = "Employment Change vs Market Access Change",
         legend = false,
