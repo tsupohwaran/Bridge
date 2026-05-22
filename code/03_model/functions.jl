@@ -48,8 +48,26 @@ end
 # For convenience. This function is used to sum over the specified dimensions and drop them.
 sumsqueeze(A; dims) = dropdims(sum(A, dims=dims), dims=dims)
 
-function WorkerChoice(wⱼ, l, d, aⱼ, params::NamedTuple; log_d=nothing)
-    (; η, θ) = params
+function CommuteDisutility(d, params::NamedTuple; log_d=nothing)
+    (; η) = params
+    commute_form = get(params, :commute_form, :power)
+    commute_weight = Float64(get(params, :commute_weight, 1.0))
+    commute_weight > 0 || error("commute_weight must be positive")
+
+    if commute_form == :log
+        return commute_weight .* η .* (isnothing(log_d) ? log.(d) : log_d)
+    elseif commute_form == :power
+        # d is measured in minutes; scale before exponentiating so η is not unit-driven.
+        commute_scale = Float64(get(params, :commute_scale, 60.0))
+        commute_scale > 0 || error("commute_scale must be positive")
+        return commute_weight .* (d ./ commute_scale) .^ η
+    else
+        error("Unsupported commute_form: $commute_form. Use :power or :log.")
+    end
+end
+
+function WorkerChoice(wⱼ, l, d, aⱼ, params::NamedTuple; log_d=nothing, commute_cost=nothing)
+    (; θ) = params
     J = size(d, 2)
     length(wⱼ) == J || error("wⱼ must have length $J")
     length(aⱼ) == J || error("aⱼ must have length $J")
@@ -58,10 +76,10 @@ function WorkerChoice(wⱼ, l, d, aⱼ, params::NamedTuple; log_d=nothing)
 
     wⱼ = wⱼ isa Vector{Float64} ? wⱼ : vec(Float64.(wⱼ))
     aⱼ = aⱼ isa Vector{Float64} ? aⱼ : vec(Float64.(aⱼ))
-    log_d = isnothing(log_d) ? log.(d) : log_d
+    commute_cost = isnothing(commute_cost) ? CommuteDisutility(d, params; log_d) : commute_cost
 
     # Use log-sum-exp trick for numerical stability
-    log_xzj = θ .* (log.(wⱼ') .+ aⱼ' .- η .* log_d)  # Z × J matrix
+    log_xzj = θ .* (log.(wⱼ') .+ aⱼ' .- commute_cost)  # Z × J matrix
     log_xzj_max = maximum(log_xzj, dims=2)  # Z × 1
     log_sum_exp = log_xzj_max .+ log.(sum(exp.(log_xzj .- log_xzj_max), dims=2))
     π_zj = exp.(log_xzj .- log_sum_exp)
@@ -89,14 +107,14 @@ function SolveAmenitiesFromEmployment(vars::NamedTuple, params::NamedTuple;
     logq = isnothing(aⱼ_init) ? zeros(J) : θ .* vec(Float64.(aⱼ_init))
     length(logq) == J || error("aⱼ_init must have length $J")
     logq .-= mean(logq)
-    log_d = log.(d)
+    commute_cost = CommuteDisutility(d, params)
 
     iter = 0
     gap = Inf
     while (iter < maxIter) && (gap > tol)
         iter += 1
         aⱼ = logq ./ θ
-        choice = WorkerChoice(wⱼ, l, d, aⱼ, params; log_d)
+        choice = WorkerChoice(wⱼ, l, d, aⱼ, params; commute_cost)
         lⱼ_model = vec(choice.lⱼ)
         gap = maximum(abs.(lⱼ_model .- lⱼ_target))
         gap <= tol && break
@@ -114,7 +132,7 @@ function SolveAmenitiesFromEmployment(vars::NamedTuple, params::NamedTuple;
 
     aⱼ = logq ./ θ
     aⱼ .-= mean(aⱼ)
-    choice = WorkerChoice(wⱼ, l, d, aⱼ, params; log_d)
+    choice = WorkerChoice(wⱼ, l, d, aⱼ, params; commute_cost)
     gap = maximum(abs.(vec(choice.lⱼ) .- lⱼ_target))
     converged = gap <= tol
 
@@ -246,11 +264,11 @@ function SolveModel(vars::NamedTuple, params::NamedTuple;
     # initial guess (use warm start if provided)
     J_local = size(d, 2)
     wⱼ = isnothing(wⱼ_init) ? ones(J_local) : copy(wⱼ_init)
-    log_d = log.(d)
+    commute_cost = CommuteDisutility(d, params)
 
     # update rule
     function UpdateRule(wⱼ)
-        choice = WorkerChoice(wⱼ, l, d, aⱼ, params; log_d)
+        choice = WorkerChoice(wⱼ, l, d, aⱼ, params; commute_cost)
         π_zj, ε_zj, lⱼ, εⱼ = choice.π_zj, choice.ε_zj, choice.lⱼ, choice.εⱼ
 
         wⱼ = α .* zⱼ .* lⱼ .^ (α - 1) .* εⱼ ./ (1 .+ εⱼ)
@@ -320,7 +338,7 @@ function SolveZfromW(vars::NamedTuple, params::NamedTuple)
     (; wⱼ, l, d, aⱼ) = vars
     (; η, θ, α) = params
 
-    choice = WorkerChoice(wⱼ, l, d, aⱼ, params; log_d = log.(d))
+    choice = WorkerChoice(wⱼ, l, d, aⱼ, params; commute_cost = CommuteDisutility(d, params))
     lⱼ, εⱼ = choice.lⱼ, choice.εⱼ
 
     zⱼ = wⱼ .* (1 .+ εⱼ) ./ (α .* lⱼ .^ (α - 1) .* εⱼ)
@@ -399,7 +417,8 @@ function ComputeModelMoments(params_to_estimate; l, d, d′, wⱼ_data, lⱼ_dat
     inner_tol=1e-5, inner_maxIter=3000, inner_display=false, require_convergence=true,
     continuation_steps=5, employment_change=:log, wage_center=:treated,
     moment_firm_mask=nothing, firm_ids=nothing, reg_sample_ids=nothing,
-    restrict_to_reg_sample::Bool=false)
+    restrict_to_reg_sample::Bool=false, commute_form=:power, commute_scale=60.0,
+    commute_weight=1.0)
     η, θ = params_to_estimate
     continuation_steps = max(1, Int(continuation_steps))
     
@@ -411,7 +430,7 @@ function ComputeModelMoments(params_to_estimate; l, d, d′, wⱼ_data, lⱼ_dat
     # Higher θ can make the counterfactual fixed point sharper, so use more damping.
     damp_cf = clamp(0.65 + 0.085 * θ, 0.75, 0.97)
     
-    params = (; η, θ, α)
+    params = (; η, θ, α, commute_form, commute_scale, commute_weight)
     
     # Step 2a: Invert for firm amenities and productivity using observed
     # employment and wage in the baseline data.
@@ -491,7 +510,8 @@ function ObjectiveFunction(params_to_estimate; l, d, d′, wⱼ_data, lⱼ_data,
     verbose=false, inner_tol=1e-5, inner_maxIter=3000, inner_display=false,
     require_convergence=true, continuation_steps=5, employment_change=:log,
     wage_center=:treated, max_abs_moment=10.0, moment_firm_mask=nothing,
-    firm_ids=nothing, reg_sample_ids=nothing, restrict_to_reg_sample::Bool=false)
+    firm_ids=nothing, reg_sample_ids=nothing, restrict_to_reg_sample::Bool=false,
+    commute_form=:power, commute_scale=60.0, commute_weight=1.0)
     η, θ = params_to_estimate
     
     # Return large penalty for invalid parameters
@@ -506,7 +526,9 @@ function ObjectiveFunction(params_to_estimate; l, d, d′, wⱼ_data, lⱼ_data,
         require_convergence=require_convergence, continuation_steps=continuation_steps,
         employment_change=employment_change, wage_center=wage_center,
         moment_firm_mask=moment_firm_mask, firm_ids=firm_ids,
-        reg_sample_ids=reg_sample_ids, restrict_to_reg_sample=restrict_to_reg_sample)
+        reg_sample_ids=reg_sample_ids, restrict_to_reg_sample=restrict_to_reg_sample,
+        commute_form=commute_form, commute_scale=commute_scale,
+        commute_weight=commute_weight)
     
     # Check for invalid model output
     if any(isnan.(β_model)) || any(isinf.(β_model)) || any(abs.(β_model) .> max_abs_moment)
@@ -529,7 +551,8 @@ function EvaluateCalibrationGrid(; l, d, d′, wⱼ_data, lⱼ_data, α, β_targ
     aⱼ_init=nothing, amenity_tol=1e-10, amenity_maxIter=5000, amenity_damp=0.5,
     continuation_steps=5, employment_change=:log, wage_center=:treated,
     max_abs_moment=10.0, verbose=true, moment_firm_mask=nothing,
-    firm_ids=nothing, reg_sample_ids=nothing, restrict_to_reg_sample::Bool=false)
+    firm_ids=nothing, reg_sample_ids=nothing, restrict_to_reg_sample::Bool=false,
+    commute_form=:power, commute_scale=60.0, commute_weight=1.0)
 
     results = DataFrame(
         η = Float64[],
@@ -550,7 +573,9 @@ function EvaluateCalibrationGrid(; l, d, d′, wⱼ_data, lⱼ_data, α, β_targ
             amenity_damp=amenity_damp, continuation_steps=continuation_steps,
             employment_change=employment_change, wage_center=wage_center,
             moment_firm_mask=moment_firm_mask, firm_ids=firm_ids,
-            reg_sample_ids=reg_sample_ids, restrict_to_reg_sample=restrict_to_reg_sample)
+            reg_sample_ids=reg_sample_ids, restrict_to_reg_sample=restrict_to_reg_sample,
+            commute_form=commute_form, commute_scale=commute_scale,
+            commute_weight=commute_weight)
 
         if any(isnan.(β_model)) || any(isinf.(β_model)) || any(abs.(β_model) .> max_abs_moment)
             obj = 1e10
@@ -585,7 +610,8 @@ function CalibrateEtaTheta(; l, d, d′, wⱼ_data, lⱼ_data, α, β_target,
     inner_tol=1e-5, inner_maxIter=3000, continuation_steps=5,
     employment_change=:log, wage_center=:treated, max_abs_moment=10.0,
     verbose=true, show_trace=true, moment_firm_mask=nothing, firm_ids=nothing,
-    reg_sample_ids=nothing, restrict_to_reg_sample::Bool=false)
+    reg_sample_ids=nothing, restrict_to_reg_sample::Bool=false,
+    commute_form=:power, commute_scale=60.0, commute_weight=1.0)
 
     lower = Float64.(lower)
     upper = Float64.(upper)
@@ -600,7 +626,9 @@ function CalibrateEtaTheta(; l, d, d′, wⱼ_data, lⱼ_data, α, β_target,
             employment_change=employment_change, wage_center=wage_center,
             max_abs_moment=max_abs_moment, moment_firm_mask=moment_firm_mask,
             firm_ids=firm_ids, reg_sample_ids=reg_sample_ids,
-            restrict_to_reg_sample=restrict_to_reg_sample)
+            restrict_to_reg_sample=restrict_to_reg_sample,
+            commute_form=commute_form, commute_scale=commute_scale,
+            commute_weight=commute_weight)
     end
 
     default_start = isnothing(x0) ? (lower .+ upper) ./ 2 : x0

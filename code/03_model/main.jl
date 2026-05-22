@@ -82,14 +82,19 @@ println("Model moment sample firms: ", sum(moment_firm_mask), "/", J,
 
 α = 0.4
 β_target = [-0.092242, 0.0939565]
-η_bounds = [0.25, 15.0]
-θ_bounds = [0.25, 8.0]
+η_bounds = [0.25, 8.0]
+θ_bounds = [0.25, 32.0]
 employment_change = :log
 wage_center = :all
+commute_form = :power
+commute_scale = 60.0
+commute_weight = 1.0
 
-# use grid search to find good starting points for the optimization
-η_grid = [1.5, 3.0, 4.5, 6.0, 7.5]
-θ_grid = [0.75, 1.5, 2.5, 3.5, 4.5]
+# use grid search to find good starting points for the optimization.
+# For the :power commute form, low θ gives β1 with the wrong sign and high η is
+# often numerically unstable, so focus the grid around the stable best region.
+η_grid = [1.5, 2.0, 2.5, 3.0]
+θ_grid = [8.0, 12.0, 16.0, 24.0, 32.0]
 grid_results = EvaluateCalibrationGrid(;
     l, d, d′, wⱼ_data, lⱼ_data, α, β_target,
     η_grid, θ_grid,
@@ -99,6 +104,9 @@ grid_results = EvaluateCalibrationGrid(;
     employment_change,
     wage_center,
     moment_firm_mask = moment_firm_mask,
+    commute_form,
+    commute_scale,
+    commute_weight,
     max_abs_moment = 10.0,
     verbose = true
 )
@@ -115,12 +123,12 @@ println()
 calibration_starts = [[row.η, row.θ] for row in eachrow(top_grid)]
 
 # based on the grid search results, we choose a good starting point for the optimization
-x0 = [8.0, 0.75]
+x0 = first(calibration_starts)
 calibration = CalibrateEtaTheta(;
     l, d, d′, wⱼ_data, lⱼ_data, α, β_target,
     aⱼ_init,
     x0,
-    starts = [x0],
+    starts = calibration_starts,
     lower = [η_bounds[1], θ_bounds[1]],
     upper = [η_bounds[2], θ_bounds[2]],
     iterations = 250,
@@ -132,6 +140,9 @@ calibration = CalibrateEtaTheta(;
     employment_change,
     wage_center,
     moment_firm_mask = moment_firm_mask,
+    commute_form,
+    commute_scale,
+    commute_weight,
     max_abs_moment = 10.0,
     verbose = true,
     show_trace = true
@@ -152,7 +163,7 @@ println("Bounds: η ∈ ", η_bounds, ", θ ∈ ", θ_bounds)
     aⱼ_init,
     inner_tol = 1e-5, inner_maxIter = 5000, inner_display = true,
     continuation_steps = 5, employment_change, wage_center,
-    moment_firm_mask = moment_firm_mask)
+    moment_firm_mask = moment_firm_mask, commute_form, commute_scale, commute_weight)
 println("\nTarget  β: ", β_target)
 println("Model   β (", moment_sample_label, "): ", β_final)
 println("Estimated η: ", η_est)
@@ -163,18 +174,18 @@ println("Estimated θ: ", θ_est)
 #==================================================#
 
 α = 0.4
-η = 8.0; # commute-wage elasticity
-θ = 0.7560388103691049; # 
+η = η_est; # commute-cost curvature
+θ = θ_est; # preference responsiveness
 
 # Solve firm amenities and productivity from observed employment and wages
 vars = (; wⱼ = wⱼ_data, lⱼ = lⱼ_data, l, d)
-params = (; η, θ, α)
+params = (; η, θ, α, commute_form, commute_scale, commute_weight)
 primitives = SolveFirmPrimitivesFromData(vars, params; aⱼ_init, displaySummary = true);
 zⱼ, aⱼ = primitives.zⱼ, primitives.aⱼ;
 
 # Solve the model
 vars = (; l, d, zⱼ, aⱼ)
-params = (; η, θ, α)
+params = (; η, θ, α, commute_form, commute_scale, commute_weight)
 
 # solve the model for baseline
 # Use observed wages as the warm start and avoid the power update here:
