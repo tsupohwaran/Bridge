@@ -62,7 +62,9 @@ lⱼ_data = Float64.(disallowmissing(df[!, :employ])) |>
     x -> x ./ sum(x); # normalize total employment to 1
 d = reshape(Float64.(df[!, :dzj]), Z, J) |> x -> replace(x, 0.0 => 1e-2);
 d′ = reshape(Float64.(df[!, :dzj_prime]), Z, J) |> x -> replace(x, 0.0 => 1e-2);
-wⱼ_data = reshape(Float64.(df[!, :wage_inital]), Z, J)[1, :] |> 
+wⱼ_raw = reshape(Float64.(df[!, :wage_inital]), Z, J)[1, :];
+lo, hi = quantile(wⱼ_raw, [0.05, 0.95])
+wⱼ_data = clamp.(wⱼ_raw, lo, hi) |>
     x -> x ./ sum(x .* lⱼ_data); # normalize total wage bill to 1
 aⱼ_init = zeros(J); # initial guess; firm amenities are inverted from observed employment
 
@@ -119,8 +121,8 @@ x0 = [8.0, 0.75]
 calibration = CalibrateEtaTheta(;
     l, d, d′, wⱼ_data, lⱼ_data, α, β_target,
     aⱼ_init,
-    x0,
-    starts = [x0],
+    # x0,
+    starts = calibration_starts,
     lower = [η_bounds[1], θ_bounds[1]],
     upper = [η_bounds[2], θ_bounds[2]],
     iterations = 250,

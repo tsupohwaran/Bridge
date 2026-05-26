@@ -19,6 +19,7 @@ Thumbs.db
 data/
 *.tmp
 *.log
+sandbox/
 
 # ===================
 # 文档备份
