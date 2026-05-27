@@ -243,10 +243,8 @@ use "$ctsd_temp_path/ctsd_07_20_step2.dta", clear
 * employment
 replace employ_avg = . if (employ_avg <= 0)
 
-* security payment
-replace security_total = . if (security_total <= 0)
+* wage payment
 replace wage_total = . if (wage_total <= 0)
-replace wage_total = security_total + wage_total // wage = wage + security payment
 
 * intermidiate goods
 replace main_business_cost = . if (main_business_cost <= 0)
@@ -399,7 +397,7 @@ gen m = ln(inter_real)
 gen alpha_l = wage_total / revenue
 keep id year sdid firm_name q k l m alpha_l inter output_index cic2 wage_total
 
-label var wage_total "工资+社保总额"
+label var wage_total "工资(不含社保)"
 label var inter "中间投入总额"
 label var output_index "产出价格指数"
 label var cic2 "行业代码(2002版)"
@@ -461,18 +459,10 @@ gduplicates drop id year, force
 save "$ctsd_temp_path/ctsd_07_20_2010exist.dta", replace
 
 * keep firms in Qingdao
-capture confirm file "$ctsd_processed_path/ctsd_location_qingdao_07_20.dta"
-if !_rc {
-    use "$ctsd_processed_path/ctsd_location_qingdao_07_20.dta", clear
-    keep if 市 == "青岛市"
-    ren (经度 纬度 县) (longitude latitude county)
-    keep sdid longitude latitude
-}
-else {
-    use "$ctsd_temp_path/ctsd_qingdao_07_20.dta", clear
-    keep sdid longitude latitude
-    gduplicates drop sdid, force
-}
+use "$ctsd_raw_path/ctsd_location_07_20.dta", clear
+keep if 市 == "青岛市"
+ren (经度 纬度 县) (longitude latitude county)
+keep sdid longitude latitude
 tempfile location_qingdao
 save `location_qingdao', replace
 
@@ -516,85 +506,4 @@ keep id year revenue employ longitude latitude age firm_type export export_bool 
 drop if missing(longitude, latitude)
 
 * regression analsys, employ_avg, longitude, latitude
-save "$ctsd_temp_path/ctsd_qingdao_07_20.dta", replace
-
-*==================================================*
-* contain firms with wage but no security
-*==================================================*
-
-use "$ctsd_temp_path/ctsd_07_20_step2.dta", clear
-
-* employment
-replace employ_avg = . if (employ_avg <= 0)
-
-* intermidiate goods
-replace main_business_cost = . if (main_business_cost <= 0)
-replace depreciation = . if (depreciation < 0)
-gen inter = main_business_cost - wage_total - depreciation
-replace inter = . if (inter <= 0)
-
-* intermidiate goods price index is the weighted average of PPI by I-O table
-gen inter_real = inter / inter_index * 100
-
-* keep firms existing in 2010
-gen if_year_2010 = (year == 2010)
-bys id: egen exist_2010 = max(if_year_2010)
-keep if exist_2010 == 1
-gduplicates drop id year, force
-save "$ctsd_temp_path/ctsd_07_20_2010exist_nosec.dta", replace
-
-* keep firms in Qingdao
-capture confirm file "$ctsd_processed_path/ctsd_location_qingdao_07_20.dta"
-if !_rc {
-    use "$ctsd_processed_path/ctsd_location_qingdao_07_20.dta", clear
-    keep if 市 == "青岛市"
-    ren (经度 纬度 县) (longitude latitude county)
-    keep sdid longitude latitude
-}
-else {
-    use "$ctsd_temp_path/ctsd_qingdao_07_20.dta", clear
-    keep sdid longitude latitude
-    gduplicates drop sdid, force
-}
-save `location_qingdao', replace
-
-* merge location info
-use "$ctsd_temp_path/ctsd_07_20_2010exist_nosec.dta", clear
-merge 1:1 sdid using `location_qingdao', keep(1 3) nogen
-replace longitude = . if year > 2010
-replace latitude = . if year > 2010
-bys id: egen location_year = max(year) if !missing(longitude, latitude)
-replace longitude = . if year != location_year
-replace latitude = . if year != location_year
-bys id: egen longitude_mode = mode(longitude), minmode
-replace longitude = longitude_mode
-bys id: egen latitude_mode = mode(latitude), minmode
-replace latitude = latitude_mode
-drop longitude_mode latitude_mode location_year
-drop if missing(longitude, latitude)
-
-* keep key variables
-drop revenue
-ren main_business_revenue revenue
-gen wage = wage_total / employ_avg
-gen wage_inital_temp_2010 = wage if (year == 2010)
-bys id: egen wage_inital_2010 = min(wage_inital_temp_2010)
-drop wage_inital_temp_2010
-
-gen wage_inital_temp_2011 = wage if (year == 2011)
-bys id: egen wage_inital_2011 = min(wage_inital_temp_2011)
-drop wage_inital_temp_2011
-
-ren employ_avg employ
-gen age = year - open_year + 1
-
-bys id: egen export_total = sum(export)
-gen export_bool = (export_total > 0)
-
-ren cic2 ind_code2
-
-keep id year revenue employ longitude latitude age export_intensity firm_type wage_total wage_inital_2010 wage_inital_2011 ind_code2 sdid export export_bool
-drop if missing(longitude, latitude)
-
-* regression analsys, employ_avg, longitude, latitude
-save "$ctsd_temp_path/ctsd_qingdao_07_20_nosec.dta", replace
+save "$ctsd_processed_path/ctsd_qingdao_07_20.dta", replace

@@ -72,12 +72,12 @@ export excel "$geo_temp_path/firm_qingdao_model.xlsx", firstrow(variables) repla
 
 * prepare CTSD data for year 2007-2020
 use "$regression_temp_path/match_cied_ctsd_07_14.dta", clear
-merge m:1 sdid using "$ctsd_temp_path/ctsd_qingdao_07_20.dta", keep(2 3) nogen
+merge m:1 sdid using "$ctsd_processed_path/ctsd_qingdao_07_20.dta", keep(2 3) nogen
 drop if missing(export_bool, firm_type, ind_code2)
 gen index = 1 if !missing(group)
 
 * prepare CIED data for year 2007-2014
-append using "$cied_temp_path/cied_qingdao_07_14.dta"
+append using "$cied_processed_path/cied_qingdao_07_14.dta"
 bys group year: gen n = _N
 drop if (n == 2) & missing(index) // drop repeated observations
 drop n index

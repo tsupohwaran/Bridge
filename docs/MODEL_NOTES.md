@@ -131,7 +131,7 @@ Verified:
 
 ```text
 α = 0.4
-β_target = [-0.092242, 0.0939565]
+β_target = [-0.06990708, -0.02787439, 0.02603689, 0.04537406]
 x0 = [8.0, 0.75]
 ```
 
@@ -145,21 +145,28 @@ z_j = w_j_data (1 + ε_j) / [α l_j_data^(α - 1) ε_j]
 ```
 
 - `main.jl` uses `a_j = 0` only as the starting guess for the amenity inversion.
-- `ComputeModelMoments` solves the model before and after the travel-time change, appends baseline and counterfactual firm outcomes as two periods, constructs `post`, `bigMA`, and baseline wage heterogeneity `w_diff`, and estimates the two-period DID moment analogue of:
+- `ComputeModelMoments` solves the model before and after the travel-time change, appends baseline and counterfactual firm outcomes as two periods, constructs `post`, `BIG`, demeaned baseline log wage (`demean_lnw0`), and demeaned log market-access intensity (`lndma`), and estimates the two-period DID moment analogue of `code/02_empirical/calculate_calibration_4_moments.do`:
 
 ```text
-lnl_jt ~ bigMA_j × post_t + w_diff_j × bigMA_j × post_t
-         + id_j fixed effects + year_t fixed effects + w_diff_j × year_t slopes
+lnl_jt ~ BIG_j × post_t
+         + lndma_j × BIG_j × post_t
+         + demean_lnw0_j × BIG_j × post_t
+         + demean_lnw0_j × lndma_j × post_t
+         + lndma_j × post_t
+         + id_j fixed effects + year_t fixed effects
+         + demean_lnw0_j × year_t slopes
 ```
 
-- The model moments are:
+- As in Stata, `lndma × post` is collinear with the treatment and treated-intensity terms and is omitted; the model moments are the four reported coefficients:
 
 ```text
-β1 = coefficient on bigMA × post
-β2 = coefficient on w_diff × bigMA × post
+β1 = coefficient on BIG × post
+β2 = coefficient on lndma × BIG × post
+β3 = coefficient on demean_lnw0 × BIG × post
+β4 = coefficient on demean_lnw0 × lndma × post
 ```
 
-- `β_target = [-0.092242, 0.0939565]` comes from empirical results. The local empirical code may not yet be updated to reproduce the corresponding target values; the user will update it later.
+- `β_target` should contain the four reported coefficients from `calculate_calibration_4_moments.do`.
 - The final `bigMA` threshold should be fixed at `0.5` minutes.
 - For now, no external labor-supply-elasticity moment or other moment should be added to discipline `θ`.
 

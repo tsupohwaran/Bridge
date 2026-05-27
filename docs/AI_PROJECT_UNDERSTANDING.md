@@ -51,7 +51,7 @@ Verified:
 Inferred:
 - The reduced-form design compares firms with larger versus smaller market-access improvements after the 2011 bridge/tunnel opening.
 - Initial wage heterogeneity is central: regressions interact treatment with `ln_w0_diff`, the firm's initial wage relative to the treated-group mean.
-- The model calibration moments are meant to mimic a regression of employment changes on `BigMA`, wage heterogeneity, and their interaction.
+- The model calibration moments are meant to mimic the four-coefficient regression in `code/02_empirical/calculate_calibration_4_moments.do`, using `BIG`, log market-access intensity, demeaned initial log wage, and their post-period interactions.
 
 Uncertain:
 - Whether `big_ma` should be based on `dln_ma >= -1`, `DMA > 0.1`, a percentile split, or another threshold is not settled across scripts/notes.
@@ -75,7 +75,7 @@ Verified:
 - `main.jl` uses `SolveFirmPrimitivesFromData` to back out firm amenity `a_j` from observed employment and firm productivity `z_j` from observed wages before solving counterfactuals.
 - The final paper should call `a_j` firm amenity, interpret `z` as a region/street/town, and call `ν_j = 1 + 1/ε_j` markdown with `ν_j > 1`.
 - The final model should continue using the current one-level logit structure.
-- Current model-side `bigMA` is fixed as `1[dMA >= 0.5]`, where `dMA` is measured in minutes.
+- Current model-side `BIG` is fixed as `1[dMA > 0.5]`, where `dMA` is measured in minutes, matching `calculate_calibration_4_moments.do`.
 
 Inferred:
 - `η` is the commuting-cost elasticity in worker utility.
@@ -86,7 +86,7 @@ Inferred:
 Uncertain:
 - Draft notes include a nested structure with parameter `σ`, but this is historical relative to the current one-level final model.
 - `main.jl` expects `pop`, `dzj`, `dzj_prime`, and `wage_inital`, but the current `data/model/processed/firm_qingdao_model.dta` on disk has only 9 variables and lacks these fields.
-- `β_target = [-0.092242, 0.0939565]` comes from empirical results, but local empirical code may not yet be updated to reproduce those values.
+- Current calibration targets should be the four reported coefficients from `code/02_empirical/calculate_calibration_4_moments.do`.
 
 ## Current Repository State
 

@@ -79,19 +79,22 @@ println("Model moment sample firms: ", sum(moment_firm_mask), "/", J,
     " in ", moment_sample_label);
 
 #==================================================#
-# Calibration: Back out η and θ from β₁ and β₂
+# Calibration: Back out η and θ from four regression moments
 #==================================================#
 
 α = 0.4
-β_target = [-0.092242, 0.0939565]
+# From code/02_empirical/calculate_calibration_4_moments.do:
+# BIG#post, lndma#BIG#post, demean_lnw0#BIG#post, demean_lnw0#lndma#post.
+β_target = [-0.06990708, -0.02787439, 0.02603689, 0.04537406]
 η_bounds = [0.25, 15.0]
 θ_bounds = [0.25, 8.0]
 employment_change = :log
 wage_center = :all
 
 # use grid search to find good starting points for the optimization
-η_grid = [1.5, 3.0, 4.5, 6.0, 7.5]
-θ_grid = [0.75, 1.5, 2.5, 3.5, 4.5]
+# Four-moment probes place the lowest objective in the low-η/low-θ basin.
+η_grid = [0.35, 0.55, 0.75, 0.9, 1.1, 1.5, 2.0, 3.0]
+θ_grid = [0.25, 0.3, 0.35, 0.5, 0.75, 1.0]
 grid_results = EvaluateCalibrationGrid(;
     l, d, d′, wⱼ_data, lⱼ_data, α, β_target,
     η_grid, θ_grid,
@@ -197,27 +200,33 @@ wⱼ′, π_zj′, ε_zj′, lⱼ′, εⱼ′ = SolveModel(vars′, params; dis
 # Analyze the results
 l̂ⱼ = lⱼ′ ./ lⱼ;
 dlnlⱼ = log.(max.(lⱼ′, eps(Float64))) .- log.(max.(lⱼ, eps(Float64)));
-dMA = sum((d - d′) .* l, dims = 1)' |> x -> replace(x, -Inf => -8);
+dMA = vec(sum((d - d′) .* l, dims = 1));
 # density(dMA, title="Kernel Density Estimate of dMA", xlabel="dMA", ylabel="Density", legend=false)
-bigMA = Float64.(dMA .>= 0.5);
-ln_dMA = log.(sum((d - d′) .* l, dims = 1)') |> x -> replace(x, -Inf => -8)
+bigMA = Float64.(dMA .> 0.5);
+ln_dMA = MomentLogDMA(dMA, bigMA)
 
 regDF = DataFrame(
     bigMA = vec(bigMA)[moment_firm_mask],
     dlnl = vec(dlnlⱼ)[moment_firm_mask],
-    w = vec(log.(max.(wⱼ, eps(Float64))))[moment_firm_mask]
+    w = vec(log.(max.(wⱼ, eps(Float64))))[moment_firm_mask],
+    lndma = MomentLogDMA(dMA, bigMA; keep=moment_firm_mask)
 );
 
 regDF.w_center = fill(mean(regDF[!, :w]), nrow(regDF));
 regDF.w_diff = regDF.w .- regDF.w_center;
-regModel = lm(@formula(dlnl ~ bigMA + w_diff + bigMA & w_diff), regDF);
+regDF.lndma_bigMA = regDF.lndma .* regDF.bigMA;
+regDF.wdiff_bigMA = regDF.w_diff .* regDF.bigMA;
+regDF.wdiff_lndma = regDF.w_diff .* regDF.lndma;
+regModel = lm(@formula(dlnl ~ w_diff + bigMA + lndma_bigMA + wdiff_bigMA + wdiff_lndma), regDF);
 println("Model moment regression table (", moment_sample_label, "):")
 println(coeftable(regModel))
 
 β_names = coefnames(regModel)
 β = [
     coef(regModel)[findfirst(==("bigMA"), β_names)],
-    coef(regModel)[findfirst(==("bigMA & w_diff"), β_names)]
+    coef(regModel)[findfirst(==("lndma_bigMA"), β_names)],
+    coef(regModel)[findfirst(==("wdiff_bigMA"), β_names)],
+    coef(regModel)[findfirst(==("wdiff_lndma"), β_names)]
 ]
 println("Reported model β (", moment_sample_label, "): ", β)
 

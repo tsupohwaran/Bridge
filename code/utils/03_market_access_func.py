@@ -27,12 +27,6 @@ GOV_PATH = GEO_RAW_DIR / "govern_qingdao.xlsx"
 # Output files
 FIRM_SCENARIOS = [
     {
-        "name": "nosec",
-        "firm_path": GEO_TEMP_DIR / "firm_qingdao_07_20_nosec.xlsx",
-        "with_bridge": GEO_PROCESSED_DIR / "commute_time_qingdao.csv",
-        "no_bridge": GEO_PROCESSED_DIR / "commute_time_no_bridge_qingdao.csv",
-    },
-    {
         "name": "model",
         "firm_path": GEO_TEMP_DIR / "firm_qingdao_model.xlsx",
         "with_bridge": GEO_PROCESSED_DIR / "commute_time_qingdao_model.csv",

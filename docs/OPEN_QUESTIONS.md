@@ -9,7 +9,7 @@ These are points that could not be safely resolved from the current files.
 1. What is the final research question: commuting cost and labor-market power, misallocation, firm employment, wage effects, or all of these?
 2. Should the treatment be described as the Jiaozhou Bay Bridge only, the bridge plus tunnel, or the broader 2011 cross-bay transport package?
 3. What is the authoritative post date and event timing: `year > 2011`, a 2011 opening-year treatment, or another convention?
-4. How should the final empirical treatment variable be written and synchronized with the model-side `bigMA = 1[dMA >= 0.5]` definition?
+4. Should other empirical scripts be synchronized with the calibration definition `BIG = 1[dMA > 0.5]`?
 5. Which sample is canonical: full unbalanced panel, strict balanced panel, firms observed at least 3/4/5 years, CTSD only, or CTSD + CIED?
 6. Which empirical scripts/tables should be updated to reproduce the confirmed `β_target` values used in the model?
 7. Should older nested-model draft material with parameter `σ` be archived as historical notes or mentioned as a discarded extension?
