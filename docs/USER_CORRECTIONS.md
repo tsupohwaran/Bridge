@@ -8,6 +8,7 @@ Use this file to record corrections from the project owner. When this file chang
 
 - `ComputeModelMoments` should estimate calibration regression moments from an appended two-period firm panel: baseline equilibrium as period 0 and counterfactual equilibrium as period 1. The current target specification should match `code/02_empirical/calculate_calibration_4_moments.do`: `reghdfe lnemp i1.BIG#i1.post c.lndma#i1.BIG#i1.post c.demean_lnw0#i1.BIG#i1.post c.demean_lnw0#c.lndma#i1.post c.lndma#i1.post, a(id year c.demean_lnw0#year ...)`. Stata omits `1.post#c.lndma` for collinearity, so the four model moments are the coefficients on `1.BIG#1.post`, `1.BIG#1.post#c.lndma`, `1.BIG#1.post#c.demean_lnw0`, and `1.post#c.demean_lnw0#c.lndma`.
 - The worker utility function should include a firm-level non-pecuniary amenity. Current implementation uses additive firm shifter `a_j` in utility, normalizes `mean(a_j) = 0`, solves `a_j` from observed firm employment, and solves `z_j` from observed wages.
+- Worker utility should use linear commuting time, not log commuting time: `U_izj = ln(w_j) + a_j - η d_zj + (1/θ) ε_ij`.
 - Model solver calls should explicitly pass `a_j` in `vars`; do not silently default missing amenities to zero.
 - In the final paper, call `a_j` firm amenity.
 - The final model should continue using the current one-level logit structure.

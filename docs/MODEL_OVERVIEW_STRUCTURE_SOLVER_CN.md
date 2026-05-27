@@ -87,12 +87,12 @@ $\eta$ 越大，通勤时间对工人效用的惩罚越大。$\theta$ 越大，�
 
 ### 3.1 工人选择
 
-当前代码中，通勤时间以分钟计量，但进入效用的是通勤时间的对数。工人效用为：
+当前代码中，通勤时间以分钟计量，并以线性形式进入效用。工人效用为：
 
 $$
 \begin{aligned}
 U_{izj}
-&= \log w_j + a_j - \eta \log d_{zj}
+&= \log w_j + a_j - \eta d_{zj}
 + \frac{1}{\theta}\varepsilon_{ij}.
 \end{aligned}
 $$
@@ -104,7 +104,7 @@ $$
 \pi_{zj}
 &=
 \frac{
-\exp\{\theta(\log w_j + a_j - \eta \log d_{zj})\}
+        \exp\{\theta(\log w_j + a_j - \eta d_{zj})\}
 }{
 \sum_k \exp\{\theta(\log w_k + a_k - \eta \log d_{zk})\}
 }.
@@ -118,9 +118,9 @@ $$
 \pi_{zj}
 &=
 \frac{
-(w_j e^{a_j} d_{zj}^{-\eta})^\theta
+(w_j e^{a_j} e^{-\eta d_{zj}})^\theta
 }{
-\sum_k (w_k e^{a_k} d_{zk}^{-\eta})^\theta
+\sum_k (w_k e^{a_k} e^{-\eta d_{zk}})^\theta
 }.
 \end{aligned}
 $$

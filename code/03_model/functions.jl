@@ -48,7 +48,7 @@ end
 # For convenience. This function is used to sum over the specified dimensions and drop them.
 sumsqueeze(A; dims) = dropdims(sum(A, dims=dims), dims=dims)
 
-function WorkerChoice(wⱼ, l, d, aⱼ, params::NamedTuple; log_d=nothing)
+function WorkerChoice(wⱼ, l, d, aⱼ, params::NamedTuple; commute_cost=nothing)
     (; η, θ) = params
     J = size(d, 2)
     length(wⱼ) == J || error("wⱼ must have length $J")
@@ -58,10 +58,10 @@ function WorkerChoice(wⱼ, l, d, aⱼ, params::NamedTuple; log_d=nothing)
 
     wⱼ = wⱼ isa Vector{Float64} ? wⱼ : vec(Float64.(wⱼ))
     aⱼ = aⱼ isa Vector{Float64} ? aⱼ : vec(Float64.(aⱼ))
-    log_d = isnothing(log_d) ? log.(d) : log_d
+    commute_cost = isnothing(commute_cost) ? Float64.(d) : commute_cost
 
     # Use log-sum-exp trick for numerical stability
-    log_xzj = θ .* (log.(wⱼ') .+ aⱼ' .- η .* log_d)  # Z × J matrix
+    log_xzj = θ .* (log.(wⱼ') .+ aⱼ' .- η .* commute_cost)  # Z × J matrix
     log_xzj_max = maximum(log_xzj, dims=2)  # Z × 1
     log_sum_exp = log_xzj_max .+ log.(sum(exp.(log_xzj .- log_xzj_max), dims=2))
     π_zj = exp.(log_xzj .- log_sum_exp)
@@ -89,14 +89,14 @@ function SolveAmenitiesFromEmployment(vars::NamedTuple, params::NamedTuple;
     logq = isnothing(aⱼ_init) ? zeros(J) : θ .* vec(Float64.(aⱼ_init))
     length(logq) == J || error("aⱼ_init must have length $J")
     logq .-= mean(logq)
-    log_d = log.(d)
+    commute_cost = Float64.(d)
 
     iter = 0
     gap = Inf
     while (iter < maxIter) && (gap > tol)
         iter += 1
         aⱼ = logq ./ θ
-        choice = WorkerChoice(wⱼ, l, d, aⱼ, params; log_d)
+        choice = WorkerChoice(wⱼ, l, d, aⱼ, params; commute_cost)
         lⱼ_model = vec(choice.lⱼ)
         gap = maximum(abs.(lⱼ_model .- lⱼ_target))
         gap <= tol && break
@@ -114,7 +114,7 @@ function SolveAmenitiesFromEmployment(vars::NamedTuple, params::NamedTuple;
 
     aⱼ = logq ./ θ
     aⱼ .-= mean(aⱼ)
-    choice = WorkerChoice(wⱼ, l, d, aⱼ, params; log_d)
+    choice = WorkerChoice(wⱼ, l, d, aⱼ, params; commute_cost)
     gap = maximum(abs.(vec(choice.lⱼ) .- lⱼ_target))
     converged = gap <= tol
 
@@ -246,11 +246,11 @@ function SolveModel(vars::NamedTuple, params::NamedTuple;
     # initial guess (use warm start if provided)
     J_local = size(d, 2)
     wⱼ = isnothing(wⱼ_init) ? ones(J_local) : copy(wⱼ_init)
-    log_d = log.(d)
+    commute_cost = Float64.(d)
 
     # update rule
     function UpdateRule(wⱼ)
-        choice = WorkerChoice(wⱼ, l, d, aⱼ, params; log_d)
+        choice = WorkerChoice(wⱼ, l, d, aⱼ, params; commute_cost)
         π_zj, ε_zj, lⱼ, εⱼ = choice.π_zj, choice.ε_zj, choice.lⱼ, choice.εⱼ
 
         wⱼ = α .* zⱼ .* lⱼ .^ (α - 1) .* εⱼ ./ (1 .+ εⱼ)
@@ -320,7 +320,7 @@ function SolveZfromW(vars::NamedTuple, params::NamedTuple)
     (; wⱼ, l, d, aⱼ) = vars
     (; η, θ, α) = params
 
-    choice = WorkerChoice(wⱼ, l, d, aⱼ, params; log_d = log.(d))
+    choice = WorkerChoice(wⱼ, l, d, aⱼ, params; commute_cost = Float64.(d))
     lⱼ, εⱼ = choice.lⱼ, choice.εⱼ
 
     zⱼ = wⱼ .* (1 .+ εⱼ) ./ (α .* lⱼ .^ (α - 1) .* εⱼ)
@@ -485,11 +485,9 @@ function ComputeModelMoments(params_to_estimate; l, d, d′, wⱼ_data, lⱼ_dat
     # This continuation step is much more stable than jumping from d to d′.
     cf = nothing
     wⱼ_cf_init = wⱼ
-    log_d = log.(d)
-    log_d′ = log.(d′)
     for step in 1:continuation_steps
         path_share = step / continuation_steps
-        d_path = exp.((1 - path_share) .* log_d .+ path_share .* log_d′)
+        d_path = (1 - path_share) .* d .+ path_share .* d′
         vars_cf = (; l, d = d_path, zⱼ, aⱼ)
         if inner_display && continuation_steps > 1
             println("Counterfactual continuation step ", step, "/", continuation_steps)

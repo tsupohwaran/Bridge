@@ -86,15 +86,19 @@ println("Model moment sample firms: ", sum(moment_firm_mask), "/", J,
 # From code/02_empirical/calculate_calibration_4_moments.do:
 # BIG#post, lndma#BIG#post, demean_lnw0#BIG#post, demean_lnw0#lndma#post.
 β_target = [-0.06990708, -0.02787439, 0.02603689, 0.04537406]
-η_bounds = [0.25, 15.0]
-θ_bounds = [0.25, 8.0]
+η_bounds = [0.02, 1.0]
+θ_bounds = [0.004, 0.12]
 employment_change = :log
 wage_center = :all
 
 # use grid search to find good starting points for the optimization
-# Four-moment probes place the lowest objective in the low-η/low-θ basin.
-η_grid = [0.35, 0.55, 0.75, 0.9, 1.1, 1.5, 2.0, 3.0]
-θ_grid = [0.25, 0.3, 0.35, 0.5, 0.75, 1.0]
+# Four-moment probes place the lowest objective on a low-η/low-θ ridge
+# around ηθ ≈ 0.004; the previous high grid missed this basin.
+η_grid = [0.001, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0]
+θ_grid = [0.2, 0.4, 0.6, 0.8, 1.0, 2.0, 2.5, 3.0, 4.0]
+
+
+θ_grid = [1.0, 1.2, 1.5, 2.0, 2.5, 3.0, 4.0]
 grid_results = EvaluateCalibrationGrid(;
     l, d, d′, wⱼ_data, lⱼ_data, α, β_target,
     η_grid, θ_grid,
@@ -109,7 +113,7 @@ grid_results = EvaluateCalibrationGrid(;
 )
 
 mkpath(projPath * "/output/tables")
-CSV.write(projPath * "/output/tables/calibration_grid.csv", grid_results)
+CSV.write(projPath * "/output/tables/calibration_grid_linear_d.csv", grid_results)
 
 grid_results = CSV.read(projPath * "/output/tables/calibration_grid.csv", DataFrame)
 top_grid = first(grid_results, min(4, nrow(grid_results)))
@@ -120,7 +124,7 @@ println()
 calibration_starts = [[row.η, row.θ] for row in eachrow(top_grid)]
 
 # based on the grid search results, we choose a good starting point for the optimization
-x0 = [8.0, 0.75]
+x0 = [0.13, 0.03]
 calibration = CalibrateEtaTheta(;
     l, d, d′, wⱼ_data, lⱼ_data, α, β_target,
     aⱼ_init,

@@ -1,6 +1,6 @@
 # Model Notes
 
-Last updated: 2026-05-21.
+Last updated: 2026-05-27.
 
 This document summarizes the structural model as read from current Julia code and draft notes. It distinguishes the current implemented model from older or richer draft formulations.
 
@@ -27,21 +27,21 @@ Verified:
 - Current Julia code corresponds to worker utility:
 
 ```text
-U_izj = ln(w_j) + a_j - η ln(d_zj) + (1/θ) ε_ij
+U_izj = ln(w_j) + a_j - η d_zj + (1/θ) ε_ij
 ```
 
 - Current Julia code implies:
 
 ```text
-π_zj = exp(θ [ln(w_j) + a_j - η ln(d_zj)])
-       / sum_k exp(θ [ln(w_k) + a_k - η ln(d_zk)])
+π_zj = exp(θ [ln(w_j) + a_j - η d_zj])
+       / sum_k exp(θ [ln(w_k) + a_k - η d_zk])
 ```
 
 - Equivalently:
 
 ```text
-π_zj = (w_j exp(a_j) d_zj^(-η))^θ
-       / sum_k (w_k exp(a_k) d_zk^(-η))^θ
+π_zj = (w_j exp(a_j) exp(-η d_zj))^θ
+       / sum_k (w_k exp(a_k) exp(-η d_zk))^θ
 ```
 
 - Firm labor is:
