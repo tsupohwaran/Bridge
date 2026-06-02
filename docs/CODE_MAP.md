@@ -157,7 +157,7 @@ Uncertain:
 
 Verified:
 - Defines `RunStata`, summary/check helpers, a generic convergence routine, `SolveModel`, `SolveZfromW`, `ComputeModelMoments`, and `ObjectiveFunction`.
-- `ComputeModelMoments` now returns the four reported moments from the `calculate_calibration_4_moments.do` specification: `BIG × post`, `lndma × BIG × post`, demeaned initial wage `× BIG × post`, and demeaned initial wage `× lndma × post`.
+- `ComputeModelMoments` now returns the four reported moments from the current two-regression `calculate_calibration_4_moments.do` specification: full-sample `BIG × post`, full-sample demeaned initial wage `× BIG × post`, treated-only `lndma × post`, and treated-only demeaned initial wage `× lndma × post`.
 - Current `SolveModel` is a one-level worker-choice model over firms.
 
 Inferred:

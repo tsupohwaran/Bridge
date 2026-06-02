@@ -131,7 +131,7 @@ Verified:
 
 ```text
 α = 0.4
-β_target = [-0.06990708, -0.02787439, 0.02603689, 0.04537406]
+β_target = [-0.0912855, 0.1068467, -0.0302357, 0.0512688]
 x0 = [8.0, 0.75]
 ```
 
@@ -145,25 +145,29 @@ z_j = w_j_data (1 + ε_j) / [α l_j_data^(α - 1) ε_j]
 ```
 
 - `main.jl` uses `a_j = 0` only as the starting guess for the amenity inversion.
-- `ComputeModelMoments` solves the model before and after the travel-time change, appends baseline and counterfactual firm outcomes as two periods, constructs `post`, `BIG`, demeaned baseline log wage (`demean_lnw0`), and demeaned log market-access intensity (`lndma`), and estimates the two-period DID moment analogue of `code/02_empirical/calculate_calibration_4_moments.do`:
+- `ComputeModelMoments` solves the model before and after the travel-time change, appends baseline and counterfactual firm outcomes as two periods, constructs `post`, `BIG`, demeaned baseline log wage (`demean_lnw0`), and raw treated log market-access intensity (`lndma = log(dMA)` for `BIG==1`), and estimates the two-regression moment analogue of `code/02_empirical/calculate_calibration_4_moments.do`:
 
 ```text
+Regression 1, full sample:
 lnl_jt ~ BIG_j × post_t
-         + lndma_j × BIG_j × post_t
          + demean_lnw0_j × BIG_j × post_t
+         + id_j fixed effects + year_t fixed effects
+         + demean_lnw0_j × year_t slopes
+
+Regression 2, BIG==1 sample:
+lnl_jt ~ lndma_j × post_t
          + demean_lnw0_j × lndma_j × post_t
-         + lndma_j × post_t
          + id_j fixed effects + year_t fixed effects
          + demean_lnw0_j × year_t slopes
 ```
 
-- As in Stata, `lndma × post` is collinear with the treatment and treated-intensity terms and is omitted; the model moments are the four reported coefficients:
+- The model moments are the four reported coefficients in this order:
 
 ```text
 β1 = coefficient on BIG × post
-β2 = coefficient on lndma × BIG × post
-β3 = coefficient on demean_lnw0 × BIG × post
-β4 = coefficient on demean_lnw0 × lndma × post
+β2 = coefficient on demean_lnw0 × BIG × post
+β3 = coefficient on lndma × post, estimated among BIG==1 firms
+β4 = coefficient on demean_lnw0 × lndma × post, estimated among BIG==1 firms
 ```
 
 - `β_target` should contain the four reported coefficients from `calculate_calibration_4_moments.do`.

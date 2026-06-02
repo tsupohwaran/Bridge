@@ -72,7 +72,7 @@ aⱼ_init = zeros(J); # initial guess; firm amenities are inverted from observed
 df_reg = DataFrame(load(projPath * "/data/model/processed/firm_two_year_reg.dta"));
 firm_ids = collect(df[1:Z:end, :id]);
 reg_sample_ids = collect(skipmissing(df_reg[!, :id]));
-restrict_to_reg_sample = true; # set false to use all model firms for model moments
+restrict_to_reg_sample = false; # set false to use all model firms for model moments
 moment_firm_mask = MomentFirmMask(J; firm_ids, reg_sample_ids, restrict_to_reg_sample);
 moment_sample_label = restrict_to_reg_sample ? "matched regression sample" : "full model sample";
 println("Model moment sample firms: ", sum(moment_firm_mask), "/", J,
@@ -84,17 +84,21 @@ println("Model moment sample firms: ", sum(moment_firm_mask), "/", J,
 
 α = 0.4
 # From code/02_empirical/calculate_calibration_4_moments.do:
-# BIG#post, lndma#BIG#post, demean_lnw0#BIG#post, demean_lnw0#lndma#post.
-β_target = [-0.06990708, -0.02787439, 0.02603689, 0.04537406]
-η_bounds = [0.25, 15.0]
+# regression 1: BIG#post, BIG#post#c.demean_lnw0
+# regression 2 (BIG == 1): post#c.lndma, post#c.demean_lnw0#c.lndma
+β_target = [-0.0912855, 0.1068467, -0.0302357, 0.0512688]
+η_bounds = [0.25, 3.0]
 θ_bounds = [0.25, 8.0]
 employment_change = :log
 wage_center = :all
 
-# use grid search to find good starting points for the optimization
-# Four-moment probes place the lowest objective in the low-η/low-θ basin.
-η_grid = [0.35, 0.55, 0.75, 0.9, 1.1, 1.5, 2.0, 3.0]
-θ_grid = [0.25, 0.3, 0.35, 0.5, 0.75, 1.0]
+# use grid search to find good starting points for the optimization.
+# η is the elasticity of the wage compensation needed for a commuting-time
+# change, so large values are hard to interpret economically. The constrained
+# grid keeps η ≤ 3. With the corrected empirical moments, the best tested
+# plausible-η starts are at high θ, so include that edge explicitly.
+η_grid = [1.0, 1.5, 2.0, 2.5, 3.0]
+θ_grid = [1.0, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0, 6.0, 8.0]
 grid_results = EvaluateCalibrationGrid(;
     l, d, d′, wⱼ_data, lⱼ_data, α, β_target,
     η_grid, θ_grid,
@@ -119,12 +123,15 @@ println()
 
 calibration_starts = [[row.η, row.θ] for row in eachrow(top_grid)]
 
-# based on the grid search results, we choose a good starting point for the optimization
-x0 = [8.0, 0.75]
+# Add the best plausible-η probe as a fallback start in case it is not among
+# the top grid rows after rerunning with slightly different tolerances.
+x0 = [3.0, 8.0]
+if !any(start -> isapprox(start[1], x0[1]) && isapprox(start[2], x0[2]), calibration_starts)
+    push!(calibration_starts, x0)
+end
 calibration = CalibrateEtaTheta(;
     l, d, d′, wⱼ_data, lⱼ_data, α, β_target,
     aⱼ_init,
-    # x0,
     starts = calibration_starts,
     lower = [η_bounds[1], θ_bounds[1]],
     upper = [η_bounds[2], θ_bounds[2]],
@@ -153,6 +160,7 @@ println("Converged: ", calibration.converged)
 println("Bounds: η ∈ ", η_bounds, ", θ ∈ ", θ_bounds)
 
 # Verify final moments
+η_est, θ_est = [1.0, 1.0]
 β_final = ComputeModelMoments([η_est, θ_est]; l, d, d′, wⱼ_data, lⱼ_data, α,
     aⱼ_init,
     inner_tol = 1e-5, inner_maxIter = 5000, inner_display = true,
@@ -209,24 +217,33 @@ regDF = DataFrame(
     bigMA = vec(bigMA)[moment_firm_mask],
     dlnl = vec(dlnlⱼ)[moment_firm_mask],
     w = vec(log.(max.(wⱼ, eps(Float64))))[moment_firm_mask],
-    lndma = MomentLogDMA(dMA, bigMA; keep=moment_firm_mask)
+    dMA = vec(dMA)[moment_firm_mask]
 );
 
+regDF.lndma = fill(NaN, nrow(regDF));
+treated_lndma = (regDF.bigMA .== 1) .& (regDF.dMA .> 0);
+regDF.lndma[treated_lndma] .= log.(regDF.dMA[treated_lndma]);
 regDF.w_center = fill(mean(regDF[!, :w]), nrow(regDF));
 regDF.w_diff = regDF.w .- regDF.w_center;
-regDF.lndma_bigMA = regDF.lndma .* regDF.bigMA;
 regDF.wdiff_bigMA = regDF.w_diff .* regDF.bigMA;
-regDF.wdiff_lndma = regDF.w_diff .* regDF.lndma;
-regModel = lm(@formula(dlnl ~ w_diff + bigMA + lndma_bigMA + wdiff_bigMA + wdiff_lndma), regDF);
-println("Model moment regression table (", moment_sample_label, "):")
-println(coeftable(regModel))
 
-β_names = coefnames(regModel)
+regModelFull = lm(@formula(dlnl ~ w_diff + bigMA + wdiff_bigMA), regDF);
+println("Model moment regression 1, full sample (", moment_sample_label, "):")
+println(coeftable(regModelFull))
+
+regDF_treated = regDF[(regDF.bigMA .== 1) .& isfinite.(regDF.lndma), :];
+regDF_treated.wdiff_lndma = regDF_treated.w_diff .* regDF_treated.lndma;
+regModelTreated = lm(@formula(dlnl ~ w_diff + lndma + wdiff_lndma), regDF_treated);
+println("Model moment regression 2, BIG == 1 (", moment_sample_label, "):")
+println(coeftable(regModelTreated))
+
+β_names_full = coefnames(regModelFull)
+β_names_treated = coefnames(regModelTreated)
 β = [
-    coef(regModel)[findfirst(==("bigMA"), β_names)],
-    coef(regModel)[findfirst(==("lndma_bigMA"), β_names)],
-    coef(regModel)[findfirst(==("wdiff_bigMA"), β_names)],
-    coef(regModel)[findfirst(==("wdiff_lndma"), β_names)]
+    coef(regModelFull)[findfirst(==("bigMA"), β_names_full)],
+    coef(regModelFull)[findfirst(==("wdiff_bigMA"), β_names_full)],
+    coef(regModelTreated)[findfirst(==("lndma"), β_names_treated)],
+    coef(regModelTreated)[findfirst(==("wdiff_lndma"), β_names_treated)]
 ]
 println("Reported model β (", moment_sample_label, "): ", β)
 

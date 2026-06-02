@@ -353,6 +353,33 @@ function MomentLogDMA(dMA, bigMA; keep=nothing)
     return lndma
 end
 
+function ResidualizedRegressionCoefficients(y, X_target, X_absorb)
+    n = length(y)
+    size(X_target, 1) == n || error("X_target must have $n rows")
+    size(X_absorb, 1) == n || error("X_absorb must have $n rows")
+
+    k = size(X_target, 2)
+    if n == 0 ||
+        any(x -> !isfinite(x), y) ||
+        any(x -> !isfinite(x), X_target) ||
+        any(x -> !isfinite(x), X_absorb)
+        return fill(Inf, k)
+    end
+
+    if rank(X_absorb) < size(X_absorb, 2)
+        return fill(Inf, k)
+    end
+
+    y_resid = y - X_absorb * (X_absorb \ y)
+    X_resid = X_target - X_absorb * (X_absorb \ X_target)
+
+    if rank(X_resid) < k
+        return fill(Inf, k)
+    end
+
+    return collect(X_resid \ y_resid)
+end
+
 function EstimateTwoPeriodDIDMoments(lnl_base, lnl_counterfactual, bigMA, w;
     dMA=nothing, lndma=nothing, wage_center=:all, keep=nothing)
 
@@ -371,9 +398,17 @@ function EstimateTwoPeriodDIDMoments(lnl_base, lnl_counterfactual, bigMA, w;
     Δlnl = Float64.(vec(lnl_counterfactual)[keep_mask] .- vec(lnl_base)[keep_mask])
     bigMA_keep = Float64.(vec(bigMA)[keep_mask])
     w_keep = Float64.(vec(w)[keep_mask])
-    lndma_keep = isnothing(lndma) ?
-        MomentLogDMA(dMA, bigMA; keep=keep_mask) :
-        Float64.(vec(lndma)[keep_mask])
+    if isnothing(lndma)
+        dMA_keep = Float64.(vec(dMA)[keep_mask])
+        lndma_keep = fill(NaN, length(dMA_keep))
+        treated = bigMA_keep .== 1
+        if any(dMA_keep[treated] .<= 0)
+            return fill(Inf, 4)
+        end
+        lndma_keep[treated] .= log.(dMA_keep[treated])
+    else
+        lndma_keep = Float64.(vec(lndma)[keep_mask])
+    end
 
     if wage_center == :treated
         treated = bigMA_keep .== 1
@@ -385,31 +420,38 @@ function EstimateTwoPeriodDIDMoments(lnl_base, lnl_counterfactual, bigMA, w;
     end
     w_diff = w_keep .- w_center
 
-    if any(x -> !isfinite(x), lndma_keep)
-        return fill(Inf, 4)
-    end
-
+    # Match calculate_calibration_4_moments.do:
+    #   1. full sample: BIG#post and demean_lnw0#BIG#post
+    #   2. BIG==1 sample: lndma#post and demean_lnw0#lndma#post
     X_absorb = hcat(ones(length(Δlnl)), w_diff)
-    X_target = hcat(
+    X_target_full = hcat(
         bigMA_keep,
-        lndma_keep .* bigMA_keep,
-        w_diff .* bigMA_keep,
-        w_diff .* lndma_keep
+        w_diff .* bigMA_keep
     )
-
-    if rank(X_absorb) < size(X_absorb, 2)
+    β_full = ResidualizedRegressionCoefficients(Δlnl, X_target_full, X_absorb)
+    if any(x -> !isfinite(x), β_full)
         return fill(Inf, 4)
     end
 
-    y_resid = Δlnl - X_absorb * (X_absorb \ Δlnl)
-    X_resid = X_target - X_absorb * (X_absorb \ X_target)
-
-    if rank(X_resid) < size(X_resid, 2)
+    treated = (bigMA_keep .== 1) .& isfinite.(lndma_keep)
+    if !any(treated)
         return fill(Inf, 4)
     end
 
-    β = X_resid \ y_resid
-    return collect(β)
+    X_absorb_treated = hcat(ones(sum(treated)), w_diff[treated])
+    X_target_treated = hcat(
+        lndma_keep[treated],
+        w_diff[treated] .* lndma_keep[treated]
+    )
+    β_treated = ResidualizedRegressionCoefficients(
+        Δlnl[treated], X_target_treated, X_absorb_treated)
+    if any(x -> !isfinite(x), β_treated)
+        return fill(Inf, 4)
+    end
+
+    # SumStats(w_diff, "w_diff (used for regression controls)")
+    # SumStats(lndma_keep[treated], "lndma (used for regression controls)")
+    return [β_full[1], β_full[2], β_treated[1], β_treated[2]]
 end
 
 function MomentFirmMask(J::Integer; moment_firm_mask=nothing, firm_ids=nothing,

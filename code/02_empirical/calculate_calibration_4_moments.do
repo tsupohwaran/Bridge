@@ -65,31 +65,17 @@ gen lndma_demean =lndma - r(mean)  //demean: lndma
 
 
 *******
-*moment
+* regression moments (4 coefficients) 
 *******
 
-reghdfe lnemp i1.BIG#i1.post c.lnw0#i1.BIG#i1.post lnage if Nemp>=2 & ///
-(year==2010 | year==2012), a(id year c.lnw0#year $control) cluster(town2#ind)
-
-keep if e(sample)==1
-
-reghdfe lnemp i1.BIG#i1.post c.demean_lnw0#i1.BIG#i1.post lnage if Nemp>=2, ///
+* regression 1
+reghdfe lnemp i1.BIG#i1.post c.demean_lnw0#i1.BIG#i1.post lnage if Nemp>=2 & (year == 2010 | year == 2012), ///
 a(id year c.demean_lnw0#year $control) cluster(town2#ind) 
 
-
-*********
-reghdfe lnemp i1.BIG#i1.post   c.lndma_demean#i1.BIG#i1.post  ///
-c.demean_lnw0#i1.BIG#i1.post /// 
-c.demean_lnw0#c.lndma_demean#i1.post /// 
-c.lndma_demean#i1.post ///
-lnage if Nemp>=2, ///
-a(id year c.demean_lnw0#year $control) cluster(town2#ind) 
-
-* regression moments (4 coefficients) 
-reghdfe lnemp i1.BIG#i1.post c.lndma_demean#i1.BIG#i1.post  ///
-c.demean_lnw0#i1.BIG#i1.post /// 
-c.demean_lnw0#c.lndma_demean#i1.post /// 
-lnage if Nemp>=2 &  (year==2010 | year==2012), ///
+* regression 2
+reghdfe lnemp c.lndma#i1.post ///
+c.demean_lnw0#c.lndma#i1.post /// 
+lnage if Nemp>=2 &  (year==2010 | year==2012) & BIG==1, ///
 a(id year c.demean_lnw0#year $control) cluster(town2#ind) 
 
 keep if e(sample)==1
