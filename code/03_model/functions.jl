@@ -399,7 +399,7 @@ function ComputeModelMoments(params_to_estimate; l, d, d′, wⱼ_data, lⱼ_dat
     inner_tol=1e-5, inner_maxIter=3000, inner_display=false, require_convergence=true,
     continuation_steps=5, employment_change=:log, wage_center=:treated,
     moment_firm_mask=nothing, firm_ids=nothing, reg_sample_ids=nothing,
-    restrict_to_reg_sample::Bool=false)
+    restrict_to_reg_sample::Bool=false, displayGap = false, damp_cf = nothing)
     η, θ = params_to_estimate
     continuation_steps = max(1, Int(continuation_steps))
     
@@ -409,7 +409,7 @@ function ComputeModelMoments(params_to_estimate; l, d, d′, wⱼ_data, lⱼ_dat
     end
     
     # Higher θ can make the counterfactual fixed point sharper, so use more damping.
-    damp_cf = clamp(0.65 + 0.085 * θ, 0.75, 0.97)
+    damp_cf = isnothing(damp_cf) ? clamp(0.65 + 0.085 * θ, 0.75, 0.97) : damp_cf
     
     params = (; η, θ, α)
     
@@ -417,7 +417,7 @@ function ComputeModelMoments(params_to_estimate; l, d, d′, wⱼ_data, lⱼ_dat
     # employment and wage in the baseline data.
     primitives = SolveFirmPrimitivesFromData((; wⱼ = wⱼ_data, lⱼ = lⱼ_data, l, d), params;
         aⱼ_init, amenity_tol, amenity_maxIter, amenity_damp,
-        displaySummary=inner_display, returnInfo=true)
+        displaySummary=inner_display, displayGap = displayGap, returnInfo=true)
     zⱼ, aⱼ = primitives.zⱼ, primitives.aⱼ
     if require_convergence && !primitives.amenity_converged
         return [Inf, Inf]
@@ -455,7 +455,7 @@ function ComputeModelMoments(params_to_estimate; l, d, d′, wⱼ_data, lⱼ_dat
         end
         cf = SolveModel(vars_cf, params;
             damp=damp_cf, tol=inner_tol, power=false, maxIter=inner_maxIter,
-            wⱼ_init=wⱼ_cf_init, displaySummary=inner_display, returnInfo=true)
+            wⱼ_init=wⱼ_cf_init, displaySummary=inner_display, displayGap=displayGap, returnInfo=true)
 
         if require_convergence && !cf.converged
             return [Inf, Inf]

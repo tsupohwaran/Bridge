@@ -83,15 +83,15 @@ println("Model moment sample firms: ", sum(moment_firm_mask), "/", J,
 #==================================================#
 
 α = 0.4
-β_target = [-0.092242, 0.0939565]
-η_bounds = [0.25, 15.0]
-θ_bounds = [0.25, 8.0]
+β_target = [-0.1005301, 0.1074488]
+η_bounds = [0.1, 1]
+θ_bounds = [1, 100]
 employment_change = :log
 wage_center = :all
 
 # use grid search to find good starting points for the optimization
-η_grid = [1.5, 3.0, 4.5, 6.0, 7.5]
-θ_grid = [0.75, 1.5, 2.5, 3.5, 4.5]
+η_grid = [0.1, 0.2, 0.5, 0.7, 1.0]
+θ_grid = [1, 5, 10, 20, 50, 70, 100]
 grid_results = EvaluateCalibrationGrid(;
     l, d, d′, wⱼ_data, lⱼ_data, α, β_target,
     η_grid, θ_grid,
@@ -106,7 +106,11 @@ grid_results = EvaluateCalibrationGrid(;
 )
 
 mkpath(projPath * "/output/tables")
-CSV.write(projPath * "/output/tables/calibration_grid.csv", grid_results)
+CSV.write(
+    joinpath(projPath, "output", "tables", "calibration_grid.csv"),
+    grid_results;
+    bom = true
+)
 
 grid_results = CSV.read(projPath * "/output/tables/calibration_grid.csv", DataFrame)
 top_grid = first(grid_results, min(4, nrow(grid_results)))
@@ -150,11 +154,14 @@ println("Converged: ", calibration.converged)
 println("Bounds: η ∈ ", η_bounds, ", θ ∈ ", θ_bounds)
 
 # Verify final moments
+η_est, θ_est = [1, 50]
 β_final = ComputeModelMoments([η_est, θ_est]; l, d, d′, wⱼ_data, lⱼ_data, α,
     aⱼ_init,
     inner_tol = 1e-5, inner_maxIter = 5000, inner_display = true,
-    continuation_steps = 5, employment_change, wage_center,
-    moment_firm_mask = moment_firm_mask)
+    continuation_steps = 1, employment_change, wage_center,
+    moment_firm_mask = moment_firm_mask, displayGap = true, damp_cf = 0.98,
+    amenity_maxIter = 10000, amenity_damp = 0.85, amenity_tol = 1e-6
+)
 println("\nTarget  β: ", β_target)
 println("Model   β (", moment_sample_label, "): ", β_final)
 println("Estimated η: ", η_est)
@@ -165,13 +172,13 @@ println("Estimated θ: ", θ_est)
 #==================================================#
 
 α = 0.4
-η = 8.0; # commute-wage elasticity
-θ = 0.7560388103691049; # 
+η = 0.5; # commute-wage elasticity
+θ = 100; # 
 
 # Solve firm amenities and productivity from observed employment and wages
 vars = (; wⱼ = wⱼ_data, lⱼ = lⱼ_data, l, d)
 params = (; η, θ, α)
-primitives = SolveFirmPrimitivesFromData(vars, params; aⱼ_init, displaySummary = true);
+primitives = SolveFirmPrimitivesFromData(vars, params; aⱼ_init, displaySummary = true, displayGap = true, amenity_damp = 0.7, amenity_tol = 1e-8);
 zⱼ, aⱼ = primitives.zⱼ, primitives.aⱼ;
 
 # Solve the model
@@ -190,8 +197,7 @@ wⱼ, π_zj, ε_zj, lⱼ, εⱼ = SolveModel(vars, params; displayGap = true, da
 
 # solve the model for counterfactual
 vars′ = (; l, d = d′, zⱼ, aⱼ);
-wⱼ′, π_zj′, ε_zj′, lⱼ′, εⱼ′ = SolveModel(vars′, params; displayGap = false, damp = 0.6, tol = 1e-9, displaySummary = true, power = true, wⱼ_init = wⱼ);
-
+wⱼ′, π_zj′, ε_zj′, lⱼ′, εⱼ′ = SolveModel(vars′, params; displayGap = true, damp = 0.98, tol = 1e-9, displaySummary = true, power = true, wⱼ_init = wⱼ, maxIter = 3000);
 
 
 # Analyze the results
