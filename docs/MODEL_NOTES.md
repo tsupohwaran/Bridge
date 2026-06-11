@@ -1,6 +1,6 @@
 # Model Notes
 
-Last updated: 2026-05-21.
+Last updated: 2026-06-05.
 
 This document summarizes the structural model as read from current Julia code and draft notes. It distinguishes the current implemented model from older or richer draft formulations.
 
@@ -190,6 +190,10 @@ Verified:
 
 ## Mechanism As Currently Understood
 
+Verified:
+- The user wants the core mechanism to be that traffic integration weakens labor-market power on average.
+- The user also wants the model to allow high-wage / large firms with large accessibility improvements to experience increased labor-market power / markdown.
+
 Inferred:
 - The bridge reduces commuting costs for some firm-origin pairs.
 - Workers reallocate toward firms made more attractive by shorter commutes and/or higher wages.
@@ -200,16 +204,4 @@ Inferred:
 - The empirical heterogeneity by initial wage is intended to discipline this mechanism.
 
 Uncertain:
-- The sign of the markdown effect for high-wage versus low-wage firms is not fully settled across notes and current simulations.
-
-## Implementation Warnings
-
-Verified:
-- Current `data/model/processed/firm_qingdao_model.dta` lacks variables needed by `main.jl`.
-- `model_output.jl` appears incompatible with the current model functions.
-- `calibration.jl` is a placeholder with undefined empirical moments.
-- `functions.jl` now solves firm amenities from `l_j_data` and firm productivity from `w_j_data` for each calibration parameter guess.
-- Direct calls to `SolveModel` and `SolveZfromW` now require `a_j` in `vars`; there is no zero-amenity fallback inside the solver.
-
-Inferred:
-- Run `main.jl` only after confirming generated market-access files and model input variables are current.
+- Current simulations still need to verify whether the model output matches the intended average and high-wage-firm markdown patterns.

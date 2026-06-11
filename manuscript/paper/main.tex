@@ -39,7 +39,7 @@
 \usepackage{pgffor}
 \usepackage{pdflscape}
 \usepackage{tikz}
-\usepackage{ctable}
+% \usepackage{ctable} % conflicts with threeparttable's \tnote and is unused here
 \usepackage{verbatim}
 \usepackage[margin=2.5cm]{geometry}
 \usepackage[normalem]{ulem}
@@ -113,8 +113,257 @@ Markdown; China \\
 \section{Introduction}
 \section{Background}
 \section{Empirical Evidence}
-\section{Model Setup}
+This section describes the reduced-form specifications that discipline the empirical facts and the quantitative model. The empirical exercise compares firms that receive larger commuting-time improvements from the cross-bay transport shock with firms that receive smaller improvements, before and after the opening of the bridge/tunnel system. The unit of observation is firm \(j\) in year \(t\). The main outcomes are log employment, log wage, and log markdown:
+\[
+    y_{jt}\in\left\{\log L_{jt},\log w_{jt},\log \nu_{jt}\right\}.
+\]
+Employment and wages are observed in the firm panel. The markdown outcome is constructed from the production-function estimation and is used as the empirical counterpart to the labor-market-power object in the model below.
 
+The treatment variable is built from the change in commuting times between residence locations and firms. Let \(d^0_{zj}\) denote the travel time from residence location \(z\) to firm \(j\) in the no-bridge network, and let \(d^1_{zj}\) denote the corresponding travel time in the network with the bridge/tunnel links. Let \(s_z\) be the normalized working-age population share of location \(z\), with \(\sum_z s_z=1\). Firm \(j\)'s market-access gain is
+\begin{equation}
+    \Delta MA_j
+    =
+    \sum_z s_z\left(d^0_{zj}-d^1_{zj}\right).
+    \label{eq:empirical_dma}
+\end{equation}
+A positive value means that the cross-bay links reduce the population-weighted commuting time to the firm. The main treatment indicator is
+\begin{equation}
+    BigMA_j = \mathbbm{1}\left\{\Delta MA_j \geq 0.5\right\},
+    \label{eq:empirical_big_ma}
+\end{equation}
+where the threshold is measured in minutes. The post period is defined as \(Post_t=\mathbbm{1}\{t \geq 2011\}\).
+
+The baseline difference-in-differences specification is
+\begin{equation}
+    y_{jt}
+    =
+    \beta_1 BigMA_j\times Post_t
+    + \mathbf{X}_{jt}'\Gamma
+    + \alpha_j
+    + \lambda_t
+    + \varepsilon_{jt}.
+    \label{eq:empirical_baseline_did}
+\end{equation}
+Firm fixed effects \(\alpha_j\) absorb time-invariant firm characteristics and the level of the treatment variable. Year fixed effects \(\lambda_t\) absorb aggregate shocks common to all firms. The control vector \(\mathbf{X}_{jt}\) includes firm age and year-varying controls for export status, ownership type, and two-digit industry. Standard errors are clustered at the town-year level, matching the geographic aggregation of the commuting shock and allowing arbitrary correlation among firms located in the same town and year.
+
+To examine whether the transport shock reallocates workers differently across firms with different initial wage levels, the main heterogeneous specification interacts treatment with the firm's pre-shock wage. Let
+\[
+    \widetilde{w}_{j0}
+    =
+    \log w_{j0}
+    -
+    \overline{\log w_0},
+\]
+where \(w_{j0}\) is firm \(j\)'s initial wage and the mean is recomputed within the estimation sample. The heterogeneous difference-in-differences regression is
+\begin{equation}
+\begin{split}
+    y_{jt}
+    =
+    &\beta_1 BigMA_j\times Post_t
+    +
+    \beta_2 \widetilde{w}_{j0}\times BigMA_j\times Post_t  \\
+    &+
+    \psi_t\widetilde{w}_{j0}
+    +
+    \mathbf{X}_{jt}'\Gamma
+    +
+    \alpha_j
+    +
+    \lambda_t
+    +
+    \varepsilon_{jt}.
+\end{split}
+    \label{eq:empirical_heterogeneous_did}
+\end{equation}
+The year-specific slopes \(\psi_t\widetilde{w}_{j0}\) allow firms with different initial wages to follow different aggregate time paths even in the absence of differential exposure to the commuting shock. In this specification, \(\beta_1\) measures the average post-opening effect for treated firms at the mean initial wage, while \(\beta_2\) measures how this effect changes with the firm's initial wage. The employment version of equation \eqref{eq:empirical_heterogeneous_did} supplies the two target moments used in the quantitative calibration.
+
+We also estimate event-study versions of equations \eqref{eq:empirical_baseline_did} and \eqref{eq:empirical_heterogeneous_did}. The baseline event-study equation is
+\begin{equation}
+    y_{jt}
+    =
+    \sum_{\tau\neq \tau_0}
+    \beta_{\tau} BigMA_j\times \mathbbm{1}\{t=\tau\}
+    +
+    \mathbf{X}_{jt}'\Gamma
+    +
+    \alpha_j
+    +
+    \lambda_t
+    +
+    \varepsilon_{jt},
+    \label{eq:empirical_event_study}
+\end{equation}
+where \(\tau_0\) is a pre-opening reference year. The heterogeneous event-study additionally includes \(\sum_{\tau\neq \tau_0}\gamma_{\tau}\widetilde{w}_{j0}\times BigMA_j\times \mathbbm{1}\{t=\tau\}\) and year-specific initial-wage slopes. These coefficients are used to inspect pre-trends and to show how the post-opening effect evolves around the shock.
+
+\begin{table}[!htbp]\centering
+\caption{DID Regression Results}
+\label{tab:did_regression_results}
+\small
+\setlength{\tabcolsep}{4.5pt}
+\begin{threeparttable}
+\begin{tabular}{lcccccc}
+\toprule
+& (1) & (2) & (3) & (4) & (5) & (6) \\
+& lnemp & lnemp & lnmd & lnmd & lnw & lnw \\
+\midrule
+\(BIG\times post\)
+& -0.012 & -0.382\sym{***} & -0.056\sym{**} & -0.428\sym{**} & 0.065\sym{***} & 0.285\sym{*} \\
+& (0.025) & (0.135) & (0.023) & (0.178) & (0.022) & (0.170) \\
+\(BIG\times post\times \log w_0\)
+&  & 0.094\sym{**} &  & 0.114\sym{**} &  & -0.064 \\
+&  & (0.042) &  & (0.054) &  & (0.053) \\
+\midrule
+Controls & Yes & Yes & Yes & Yes & Yes & Yes \\
+Firm FE & Yes & Yes & Yes & Yes & Yes & Yes \\
+Year FE & Yes & Yes & Yes & Yes & Yes & Yes \\
+Observations & 24,350 & 16,411 & 5,066 & 5,062 & 20,025 & 16,145 \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}[flushleft]
+\footnotesize
+\item Notes: Regressions are estimated using \texttt{reghdfe}. Standard errors are clustered at the town-sector level and reported in parentheses. \(\sym{*}p<0.10\), \(\sym{**}p<0.05\), \(\sym{***}p<0.01\).
+\end{tablenotes}
+\end{threeparttable}
+\end{table}
+\FloatBarrier
+
+\section{Model Setup}
+This section presents the quantitative spatial model used to interpret the reduced-form evidence. The model has two sets of locations. Workers live in residence locations \(z\in\mathcal{Z}\), interpreted as streets or towns, and firms are indexed by \(j\in\mathcal{J}\). The mass of workers living in \(z\) is \(l_z\), normalized so that \(\sum_z l_z=1\). Commuting time from \(z\) to \(j\) is \(d_{zj}\). A firm is characterized by a wage \(w_j\), a productivity term \(A_j\), and a firm amenity \(a_j\). The amenity captures non-pecuniary firm attributes that affect worker choices but do not enter the production function directly.
+
+\subsection{Worker Choice}
+Worker \(i\), living in location \(z\), obtains indirect utility from working at firm \(j\),
+\begin{equation}
+    U_{izj}
+    =
+    \log w_j
+    +
+    a_j
+    -
+    \eta\log d_{zj}
+    +
+    \frac{1}{\theta}\xi_{ij},
+    \label{eq:model_utility}
+\end{equation}
+where \(\eta>0\) governs the disutility of commuting time and \(\theta>0\) governs the sensitivity of worker choices to systematic utility. The idiosyncratic taste shock \(\xi_{ij}\) is independent and Type-I extreme value. The probability that a worker in \(z\) chooses firm \(j\) is therefore
+\begin{equation}
+    \pi_{zj}
+    =
+    \frac{
+    \exp\left\{\theta\left(\log w_j+a_j-\eta\log d_{zj}\right)\right\}
+    }{
+    \sum_{k\in\mathcal{J}}
+    \exp\left\{\theta\left(\log w_k+a_k-\eta\log d_{zk}\right)\right\}
+    }
+    =
+    \frac{\left(w_j\exp(a_j)d_{zj}^{-\eta}\right)^\theta}
+    {\sum_{k\in\mathcal{J}}\left(w_k\exp(a_k)d_{zk}^{-\eta}\right)^\theta}.
+    \label{eq:model_choice_probability}
+\end{equation}
+Firm \(j\)'s labor force is the sum of the workers choosing that firm across residence locations:
+\begin{equation}
+    L_j
+    =
+    \sum_{z\in\mathcal{Z}} l_z\pi_{zj}.
+    \label{eq:model_labor}
+\end{equation}
+
+The firm-specific labor supply elasticity follows from the logit choice structure. For workers in residence location \(z\), the elasticity of the choice probability with respect to firm \(j\)'s own wage is
+\begin{equation}
+    \varepsilon_{zj}
+    =
+    \frac{\partial \log \pi_{zj}}{\partial \log w_j}
+    =
+    \theta\left(1-\pi_{zj}\right).
+    \label{eq:model_origin_elasticity}
+\end{equation}
+Let
+\[
+    \omega_{zj}
+    =
+    \frac{l_z\pi_{zj}}{L_j}
+\]
+be the share of firm \(j\)'s workforce that comes from residence location \(z\). Firm \(j\)'s aggregate labor supply elasticity is the workforce-share-weighted average of the origin-specific elasticities:
+\begin{equation}
+    \varepsilon_j
+    =
+    \frac{\partial \log L_j}{\partial \log w_j}
+    =
+    \sum_{z\in\mathcal{Z}}\omega_{zj}\varepsilon_{zj}.
+    \label{eq:model_firm_elasticity}
+\end{equation}
+The bridge changes commuting times, and hence changes \(\pi_{zj}\), worker-origin composition \(\omega_{zj}\), and the labor supply elasticity \(\varepsilon_j\).
+
+\subsection{Firms and Markdown}
+Firm \(j\) produces with decreasing returns to labor,
+\begin{equation}
+    Y_j = A_j L_j^\alpha,
+    \qquad 0<\alpha<1,
+    \label{eq:model_production}
+\end{equation}
+with product prices normalized. The firm chooses wages while recognizing that its labor supply is upward sloping. The first-order condition equates the marginal product of labor to marginal labor expenditure:
+\begin{equation}
+    \alpha A_j L_j^{\alpha-1}
+    =
+    w_j\left(1+\frac{1}{\varepsilon_j}\right).
+    \label{eq:model_foc}
+\end{equation}
+Equivalently, the equilibrium wage satisfies
+\begin{equation}
+    w_j
+    =
+    \alpha A_j L_j^{\alpha-1}
+    \frac{\varepsilon_j}{1+\varepsilon_j}.
+    \label{eq:model_wage_foc}
+\end{equation}
+The model markdown is defined as the ratio between the marginal product of labor and the wage:
+\begin{equation}
+    \nu_j
+    =
+    \frac{\alpha A_j L_j^{\alpha-1}}{w_j}
+    =
+    1+\frac{1}{\varepsilon_j}
+    >
+    1.
+    \label{eq:model_markdown}
+\end{equation}
+Thus, a firm with a lower labor supply elasticity has greater labor-market power and a higher markdown.
+
+\subsection{Equilibrium, Inversion, and Bridge Counterfactual}
+Given primitives \(\{l_z,d_{zj},A_j,a_j\}\) and parameters \((\alpha,\eta,\theta)\), an equilibrium is a vector of wages \(\{w_j\}_{j\in\mathcal{J}}\) such that worker choices satisfy equation \eqref{eq:model_choice_probability}, firm labor satisfies equation \eqref{eq:model_labor}, firm-level elasticities satisfy equation \eqref{eq:model_firm_elasticity}, and wages satisfy equation \eqref{eq:model_wage_foc}. Since only relative wages matter for worker choices, the numerical solution normalizes the aggregate wage bill.
+
+For a candidate value of \((\eta,\theta)\), the model maps the observed baseline economy into firm primitives in two steps. First, firm amenities are inverted from observed baseline employment and wages:
+\begin{equation}
+    L_j^{data}
+    =
+    \sum_z l_z
+    \pi_{zj}\left(w^{data},d^0,a;\eta,\theta\right),
+    \qquad
+    \frac{1}{J}\sum_j a_j=0.
+    \label{eq:model_amenity_inversion}
+\end{equation}
+Second, firm productivity is backed out from the wage first-order condition:
+\begin{equation}
+    A_j
+    =
+    \kappa
+    \frac{
+    w_j^{data}\left(1+\varepsilon_j^{data}\right)
+    }{
+    \alpha \left(L_j^{data}\right)^{\alpha-1}\varepsilon_j^{data}
+    },
+    \label{eq:model_productivity_inversion}
+\end{equation}
+where \(\kappa\) is a normalization constant. In the implementation, \(\alpha\) is fixed and \(\eta\) and \(\theta\) are calibrated to match the empirical employment moments described above.
+
+The counterfactual compares two commuting networks. The baseline network uses no-bridge commuting times \(d^0_{zj}\). The post-opening network uses with-bridge commuting times \(d^1_{zj}\). Holding residence populations, firm amenities, and firm productivities fixed, we solve the model under \(d^0\) and \(d^1\). The model-implied changes in employment, wages, and markdowns are then
+\[
+    \Delta\log L_j=\log L_j^1-\log L_j^0,\qquad
+    \Delta\log w_j=\log w_j^1-\log w_j^0,\qquad
+    \Delta\log \nu_j=\log \nu_j^1-\log \nu_j^0.
+\]
+For the calibration moments, the model appends the no-bridge equilibrium and the with-bridge equilibrium as a two-period firm panel and estimates the analogue of equation \eqref{eq:empirical_heterogeneous_did} with outcome \(\log L_j\), firm fixed effects, period fixed effects, and period-specific initial-wage slopes. The two model coefficients on \(BigMA_j\times Post_t\) and \(\widetilde{w}_{j0}\times BigMA_j\times Post_t\) are matched to their empirical counterparts.
+
+\section{Calibration and Simulation}
 
 
 \end{document}

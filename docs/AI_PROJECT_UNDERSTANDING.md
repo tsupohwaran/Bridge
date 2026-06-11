@@ -1,6 +1,6 @@
 # AI Project Understanding
 
-Last updated: 2026-05-21.
+Last updated: 2026-06-05.
 
 This document is an AI-readable map of the project as understood from the current repository. It is not a substitute for the paper. Statements are explicitly classified as `Verified`, `Inferred`, or `Uncertain`.
 
@@ -47,14 +47,18 @@ Verified:
 - Outcomes used in `bridge_effect.do` include `ln_employ`, `ln_md`, and `ln_wage`.
 - Main controls include age plus export status by year, firm type by year, industry by year, firm fixed effects, and year fixed effects.
 - The empirical script runs event-study style interactions for 2010-2013 and DID-style `big_ma × post` regressions.
+- The user confirmed that the preferred event timing treats 2011 as the treatment year, so the empirical `post` definition should be `year >= 2011`.
+- The user confirmed that the treatment should be interpreted as firm-level accessibility improvement induced by bridge construction, not as a simple Huangdao / Jiaozhou Bay location indicator.
 
 Inferred:
 - The reduced-form design compares firms with larger versus smaller market-access improvements after the 2011 bridge/tunnel opening.
 - Initial wage heterogeneity is central: regressions interact treatment with `ln_w0_diff`, the firm's initial wage relative to the treated-group mean.
 - The model calibration moments are meant to mimic a regression of employment changes on `BigMA`, wage heterogeneity, and their interaction.
+- Because SUTVA / general-equilibrium spillovers can affect less exposed firms too, the DID coefficients should be interpreted as relative changes for more affected firms compared with less affected firms, not as the absolute total effect of the bridge.
+- This relative-effect limitation motivates the structural general-equilibrium model.
 
 Uncertain:
-- Whether `big_ma` should be based on `dln_ma >= -1`, `DMA > 0.1`, a percentile split, or another threshold is not settled across scripts/notes.
+- Local empirical scripts still need to be synchronized with the confirmed treatment timing (`year >= 2011`) and the model-side `BigMA = 1[dMA >= 0.5]` definition.
 - The preferred balanced/unbalanced panel definition is unclear.
 - `bridge_effect.do` uses `repeat != 5` while the overall data span is 2007-2020; this likely targets a 5-year window after filters, but the exact intended sample window needs confirmation.
 
@@ -82,6 +86,7 @@ Inferred:
 - `θ` controls preference dispersion / responsiveness to wage and commute differences.
 - The model counterfactual is intended to move from no-bridge commuting times `d` to with-bridge times `d′`.
 - The model is designed to rationalize why market-access improvements affect high- and low-wage firms differently.
+- The user wants the main mechanism to be that traffic integration weakens labor-market power on average, while high-wage / large firms with large accessibility gains may experience increased labor-market power / markdown.
 
 Uncertain:
 - Draft notes include a nested structure with parameter `σ`, but this is historical relative to the current one-level final model.

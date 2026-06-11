@@ -1,6 +1,6 @@
 # User Corrections
 
-Last generated: 2026-05-07.
+Last updated: 2026-06-05.
 
 Use this file to record corrections from the project owner. When this file changes, update the other AI understanding documents accordingly.
 
@@ -16,14 +16,18 @@ Use this file to record corrections from the project owner. When this file chang
 - The final `bigMA` threshold should be fixed at `0.5` minutes.
 - `β_target` comes from empirical results. The local empirical code may not yet be updated to reproduce the corresponding target values; the user will update it later.
 - For now, do not add external labor-supply-elasticity moments or other moments to discipline `θ`.
+- The empirical treatment should be interpreted as firm-level accessibility improvement induced by the bridge construction fact. Being located in Huangdao / Jiaozhou Bay is not itself equivalent to `BigMA`.
+- The preferred event timing treats 2011 as the treatment year. Empirical `post` should be defined as `year >= 2011`.
+- SUTVA / general-equilibrium spillovers are acknowledged. The DID coefficients identify relative changes of more affected firms compared with less affected firms, not the absolute total effect of the bridge. This limitation is one reason the paper needs a general-equilibrium model.
+- The preferred model mechanism is that traffic integration weakens labor-market power on average, but high-wage / large firms with large accessibility improvements may experience increased labor-market power / markdown.
 
 ## Pending Correction Slots
 
-- Research question:
-- Treatment definition:
+- Research question: traffic integration, labor-market power, and reallocation/misallocation; exact final wording still pending.
+- Treatment definition: firm-level accessibility improvement from bridge construction, with `BigMA` based on the confirmed 0.5-minute market-access threshold; not a simple Huangdao / Jiaozhou Bay location dummy.
 - Main sample:
 - Preferred data sources:
-- Preferred empirical specification: two-period DID moments in `ComputeModelMoments` using appended baseline/counterfactual firm data and absorbed `id`, `year`, and `c.w_diff#year` effects.
+- Preferred empirical specification: two-period DID moments in `ComputeModelMoments` using appended baseline/counterfactual firm data and absorbed `id`, `year`, and `c.w_diff#year` effects; empirical `post` should use `year >= 2011`.
 - Calibration targets: `β_target` comes from empirical results; local empirical scripts may be updated later.
 - Model version: current one-level logit.
 - Results to treat as current:
