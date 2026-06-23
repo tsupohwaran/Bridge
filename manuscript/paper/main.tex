@@ -175,7 +175,7 @@ where \(w_{j0}\) is firm \(j\)'s initial wage and the mean is recomputed within 
 \end{split}
     \label{eq:empirical_heterogeneous_did}
 \end{equation}
-The year-specific slopes \(\psi_t\widetilde{w}_{j0}\) allow firms with different initial wages to follow different aggregate time paths even in the absence of differential exposure to the commuting shock. In this specification, \(\beta_1\) measures the average post-opening effect for treated firms at the mean initial wage, while \(\beta_2\) measures how this effect changes with the firm's initial wage. The employment version of equation \eqref{eq:empirical_heterogeneous_did} supplies the two target moments used in the quantitative calibration.
+The year-specific slopes \(\psi_t\widetilde{w}_{j0}\) allow firms with different initial wages to follow different aggregate time paths even in the absence of differential exposure to the commuting shock. In this specification, \(\beta_1\) measures the average post-opening effect for treated firms at the mean initial wage, while \(\beta_2\) measures how this effect changes with the firm's initial wage. The employment version of equation \eqref{eq:empirical_heterogeneous_did} supplies two target moments used in the quantitative calibration. The wage version of the reduced-form specification supplies a third moment, the average wage response of firms with large market-access gains.
 
 We also estimate event-study versions of equations \eqref{eq:empirical_baseline_did} and \eqref{eq:empirical_heterogeneous_did}. The baseline event-study equation is
 \begin{equation}
@@ -353,7 +353,7 @@ Second, firm productivity is backed out from the wage first-order condition:
     },
     \label{eq:model_productivity_inversion}
 \end{equation}
-where \(\kappa\) is a normalization constant. In the implementation, \(\alpha\) is fixed and \(\eta\) and \(\theta\) are calibrated to match the empirical employment moments described above.
+where \(\kappa\) is a normalization constant. In the implementation, \(\alpha\) is fixed and \(\eta\) and \(\theta\) are calibrated to match the reduced-form moments described below.
 
 The counterfactual compares two commuting networks. The baseline network uses no-bridge commuting times \(d^0_{zj}\). The post-opening network uses with-bridge commuting times \(d^1_{zj}\). Holding residence populations, firm amenities, and firm productivities fixed, we solve the model under \(d^0\) and \(d^1\). The model-implied changes in employment, wages, and markdowns are then
 \[
@@ -361,9 +361,50 @@ The counterfactual compares two commuting networks. The baseline network uses no
     \Delta\log w_j=\log w_j^1-\log w_j^0,\qquad
     \Delta\log \nu_j=\log \nu_j^1-\log \nu_j^0.
 \]
-For the calibration moments, the model appends the no-bridge equilibrium and the with-bridge equilibrium as a two-period firm panel and estimates the analogue of equation \eqref{eq:empirical_heterogeneous_did} with outcome \(\log L_j\), firm fixed effects, period fixed effects, and period-specific initial-wage slopes. The two model coefficients on \(BigMA_j\times Post_t\) and \(\widetilde{w}_{j0}\times BigMA_j\times Post_t\) are matched to their empirical counterparts.
+For the calibration moments, the model appends the no-bridge equilibrium and the with-bridge equilibrium as a two-period firm panel and estimates the analogue of equation \eqref{eq:empirical_heterogeneous_did} with outcome \(\log L_j\), firm fixed effects, period fixed effects, and period-specific initial-wage slopes. The two model coefficients on \(BigMA_j\times Post_t\) and \(\widetilde{w}_{j0}\times BigMA_j\times Post_t\) are matched to their empirical counterparts. The model also estimates the corresponding two-period wage response, using outcome \(\log w_j\), to match the reduced-form wage moment.
 
 \section{Calibration and Simulation}
 
+The calibration chooses the commuting-cost parameter \(\eta\) and the choice-sensitivity parameter \(\theta\) so that the model reproduces the reduced-form responses of employment and wages to the bridge-induced market-access shock. The production curvature \(\alpha\) is fixed. For each candidate pair \((\eta,\theta)\), the model first inverts the baseline firm amenities and firm productivities using equations \eqref{eq:model_amenity_inversion} and \eqref{eq:model_productivity_inversion}. Holding these primitives fixed, the model then solves the no-bridge equilibrium under \(d^0\) and the post-opening equilibrium under \(d^1\). The resulting firm-level changes in employment and wages are converted into a two-period model panel and projected onto the same treatment and wage-heterogeneity variables used in the reduced-form regressions.
+
+The target vector contains three reduced-form coefficients:
+\begin{equation}
+    \widehat{m}^{RF}
+    =
+    \begin{pmatrix}
+        \widehat{\beta}^{RF}_{L,1} \\
+        \widehat{\beta}^{RF}_{L,2} \\
+        \widehat{\beta}^{RF}_{w,1}
+    \end{pmatrix}.
+    \label{eq:calibration_target_vector}
+\end{equation}
+The first element, \(\widehat{\beta}^{RF}_{L,1}\), is the coefficient on \(BigMA_j\times Post_t\) in the employment regression. The second element, \(\widehat{\beta}^{RF}_{L,2}\), is the coefficient on \(\widetilde{w}_{j0}\times BigMA_j\times Post_t\) in the employment regression and captures whether the employment effect of the bridge differs between high- and low-wage firms. The third element, \(\widehat{\beta}^{RF}_{w,1}\), is the coefficient on \(BigMA_j\times Post_t\) in the wage regression. These three moments are computed from the reduced-form sample and then held fixed as calibration targets.
+
+For any candidate \((\eta,\theta)\), the model generates the corresponding moment vector
+\begin{equation}
+    m^{M}(\eta,\theta)
+    =
+    \begin{pmatrix}
+        \beta^{M}_{L,1}(\eta,\theta) \\
+        \beta^{M}_{L,2}(\eta,\theta) \\
+        \beta^{M}_{w,1}(\eta,\theta)
+    \end{pmatrix},
+    \label{eq:calibration_model_vector}
+\end{equation}
+where \(\beta^{M}_{L,1}\) and \(\beta^{M}_{L,2}\) are obtained by applying the employment calibration regression to the model-generated two-period panel, and \(\beta^{M}_{w,1}\) is obtained by applying the wage calibration regression to model-generated wages. The estimates \((\widehat{\eta},\widehat{\theta})\) solve
+\begin{equation}
+    (\widehat{\eta},\widehat{\theta})
+    =
+    \arg\min_{\eta,\theta}
+    \left[
+        m^{M}(\eta,\theta)-\widehat{m}^{RF}
+    \right]'
+    W
+    \left[
+        m^{M}(\eta,\theta)-\widehat{m}^{RF}
+    \right],
+    \label{eq:calibration_objective}
+\end{equation}
+where the current implementation uses an identity weighting matrix \(W\) and searches over a compact admissible parameter space. The two employment moments discipline the magnitude and wage heterogeneity of labor reallocation induced by the commuting-cost shock. The wage moment adds information about the equilibrium wage response, which is shaped by both labor reallocation and changes in firms' labor supply elasticities. Since commuting-time changes enter worker choice primarily through the product \(\theta\eta\), the wage and elasticity channels are important for separating the commuting-cost parameter from the choice-sensitivity parameter.
 
 \end{document}

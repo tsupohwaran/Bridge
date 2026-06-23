@@ -69,8 +69,38 @@ gen lndma_demean =lndma - r(mean)  //demean: lndma
 *******
 
 reghdfe lnemp i1.BIG#i1.post c.demean_lnw0#i1.BIG#i1.post lnage if (year==2010 | year==2012), a(id year c.demean_lnw0#year $control) cluster(town2#ind)
+gen byte in_emp_reg = e(sample)
 
-keep if e(sample)==1
+reghdfe lnw i1.BIG#i1.post lnage if (year==2010 | year==2012), a(id year c.demean_lnw0#year $control) cluster(town2#ind)
+gen byte in_w_reg = e(sample)
+
+gen byte in_common_reg = in_emp_reg==1 & in_w_reg==1
+
+reghdfe lnemp i1.BIG#i1.post c.demean_lnw0#i1.BIG#i1.post lnage if in_common_reg, a(id year c.demean_lnw0#year $control) cluster(town2#ind)
+scalar beta_labor_bigMA = _b[1.BIG#1.post]
+scalar beta_labor_bigMA_wdiff = _b[c.demean_lnw0#1.BIG#1.post]
+
+reghdfe lnw i1.BIG#i1.post lnage if in_common_reg, a(id year c.demean_lnw0#year $control) cluster(town2#ind)
+scalar beta_wage_bigMA = _b[1.BIG#1.post]
+
+cap mkdir "$proj_path/output"
+cap mkdir "$output_table_path"
+
+preserve
+    clear
+    set obs 3
+    gen str24 moment = ""
+    gen double beta = .
+    replace moment = "labor_bigMA" in 1
+    replace beta = scalar(beta_labor_bigMA) in 1
+    replace moment = "labor_bigMA_wdiff" in 2
+    replace beta = scalar(beta_labor_bigMA_wdiff) in 2
+    replace moment = "wage_bigMA" in 3
+    replace beta = scalar(beta_wage_bigMA) in 3
+    export delimited using "$output_table_path/calibration_moments.csv", replace
+restore
+
+keep if in_common_reg==1
 duplicates drop id, force
 keep id
 save "$model_processed_path/firm_two_year_reg.dta", replace

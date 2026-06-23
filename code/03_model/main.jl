@@ -43,6 +43,9 @@ RunStata(projPath, stataPath, "code/01_data_prep/03_prep_market_access.do")
 # Effect of the cross-sea bridge
 RunStata(projPath, stataPath, "code/02_empirical/bridge_effect.do")
 
+# Calibration moments
+RunStata(projPath, stataPath, "code/02_empirical/calculate_calibration_moments.do")
+
 #==================================================#
 # Load data
 #==================================================#
@@ -79,22 +82,36 @@ println("Model moment sample firms: ", sum(moment_firm_mask), "/", J,
     " in ", moment_sample_label);
 
 #==================================================#
-# Calibration: Back out η and θ from β₁ and β₂
+# Calibration: Back out η and θ from labor and wage moments with fixed α
 #==================================================#
 
-α = 0.4
-β_target = [-0.1005301, 0.1074488]
-η_bounds = [0.1, 1]
-θ_bounds = [1, 100]
+moment_target_path = joinpath(projPath, "output", "tables", "calibration_moments.csv")
+moment_order = ["labor_bigMA", "labor_bigMA_wdiff", "wage_bigMA"]
+moment_targets = CSV.read(moment_target_path, DataFrame)
+moment_lookup = Dict(String(row.moment) => Float64(row.beta) for row in eachrow(moment_targets))
+missing_moments = setdiff(moment_order, collect(keys(moment_lookup)))
+isempty(missing_moments) || error("Missing calibration moments: " * join(missing_moments, ", "))
+β_target = [moment_lookup[moment] for moment in moment_order]
+println("Calibration target moments:")
+show(DataFrame(moment = moment_order, beta = β_target), allrows = true, allcols = true)
+println()
+
+η_bounds = [0.1, 5.0]
+θ_bounds = [0.1, 10]
+α_fixed = 0.4
+# α_bounds = [0.1, 0.9]
 employment_change = :log
 wage_center = :all
 
 # use grid search to find good starting points for the optimization
-η_grid = [0.1, 0.2, 0.5, 0.7, 1.0]
-θ_grid = [1, 5, 10, 20, 50, 70, 100]
+η_grid = [0.5, 0.7, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0]
+θ_grid = [0.1, 0.5, 1.0, 5.0, 10.0]
+# α_grid = [0.2, 0.4, 0.6, 0.8]
 grid_results = EvaluateCalibrationGrid(;
-    l, d, d′, wⱼ_data, lⱼ_data, α, β_target,
+    l, d, d′, wⱼ_data, lⱼ_data, β_target, 
+    α = α_fixed,
     η_grid, θ_grid,
+    aⱼ_init,
     inner_tol = 2e-5,
     inner_maxIter = 3000,
     continuation_steps = 5,
@@ -120,13 +137,11 @@ println()
 
 calibration_starts = [[row.η, row.θ] for row in eachrow(top_grid)]
 
-# based on the grid search results, we choose a good starting point for the optimization
-x0 = [8.0, 0.75]
-calibration = CalibrateEtaTheta(;
-    l, d, d′, wⱼ_data, lⱼ_data, α, β_target,
+calibration = CalibrateEtaThetaAlpha(;
+    l, d, d′, wⱼ_data, lⱼ_data, β_target,
+    α = α_fixed,
     aⱼ_init,
-    # x0,
-    starts = calibration_starts,
+    starts = [[4.0, 5.0]],
     lower = [η_bounds[1], θ_bounds[1]],
     upper = [η_bounds[2], θ_bounds[2]],
     iterations = 250,
@@ -147,15 +162,14 @@ result = calibration.result
 println("\n" * "="^50)
 println("OPTIMIZATION RESULTS")
 println("="^50)
-η_est, θ_est = calibration.parameters
+η_est, θ_est, α_est = calibration.parameters
 
 println("Final objective: ", calibration.objective)
 println("Converged: ", calibration.converged)
-println("Bounds: η ∈ ", η_bounds, ", θ ∈ ", θ_bounds)
+println("Bounds: η ∈ ", η_bounds, ", θ ∈ ", θ_bounds, ", fixed α = ", α_est)
 
 # Verify final moments
-η_est, θ_est = [1, 50]
-β_final = ComputeModelMoments([η_est, θ_est]; l, d, d′, wⱼ_data, lⱼ_data, α,
+β_final = ComputeModelMoments([η_est, θ_est, α_est]; l, d, d′, wⱼ_data, lⱼ_data,
     aⱼ_init,
     inner_tol = 1e-5, inner_maxIter = 5000, inner_display = true,
     continuation_steps = 1, employment_change, wage_center,
@@ -166,14 +180,13 @@ println("\nTarget  β: ", β_target)
 println("Model   β (", moment_sample_label, "): ", β_final)
 println("Estimated η: ", η_est)
 println("Estimated θ: ", θ_est)
+println("Fixed α: ", α_est)
 
 #==================================================#
-# Simulation using calibrated η and θ
+# Simulation using calibrated η, θ, and α
 #==================================================#
 
-α = 0.4
-η = 0.5; # commute-wage elasticity
-θ = 100; # 
+η, θ, α = [3, 5.0, 0.6]
 
 # Solve firm amenities and productivity from observed employment and wages
 vars = (; wⱼ = wⱼ_data, lⱼ = lⱼ_data, l, d)
@@ -191,8 +204,10 @@ params = (; η, θ, α)
 wⱼ, π_zj, ε_zj, lⱼ, εⱼ = SolveModel(vars, params; displayGap = true, damp = 0.6, tol = 1e-7, displaySummary = true, power = false, wⱼ_init = wⱼ_data);
 
 ## Calculate correlation between solved wages and observed wages
-# corr_emp = cor(vec(lⱼ), vec(lⱼ_data))
-# corr_wages = cor(vec(wⱼ), vec(wⱼ_data))
+println("Corrleation between lⱼ and lⱼ_data:", cor(vec(lⱼ), vec(lⱼ_data)))
+println("Corrleation between wⱼ and wⱼ_data:", cor(vec(wⱼ), vec(wⱼ_data)))
+println("Corrleation between wⱼ and aⱼ:", cor(vec(wⱼ), vec(aⱼ)))
+println("Corrleation between wⱼ and lⱼ:", cor(vec(wⱼ), vec(lⱼ)))
 # println("Correlation between wⱼ_solved and wⱼ_data: ", corr_wages) # should be very close to 1
 
 # solve the model for counterfactual
@@ -208,23 +223,12 @@ dMA = sum((d - d′) .* l, dims = 1)' |> x -> replace(x, -Inf => -8);
 bigMA = Float64.(dMA .>= 0.5);
 ln_dMA = log.(sum((d - d′) .* l, dims = 1)') |> x -> replace(x, -Inf => -8)
 
-regDF = DataFrame(
-    bigMA = vec(bigMA)[moment_firm_mask],
-    dlnl = vec(dlnlⱼ)[moment_firm_mask],
-    w = vec(log.(max.(wⱼ, eps(Float64))))[moment_firm_mask]
-);
-
-regDF.w_center = fill(mean(regDF[!, :w]), nrow(regDF));
-regDF.w_diff = regDF.w .- regDF.w_center;
-regModel = lm(@formula(dlnl ~ bigMA + w_diff + bigMA & w_diff), regDF);
-println("Model moment regression table (", moment_sample_label, "):")
-println(coeftable(regModel))
-
-β_names = coefnames(regModel)
-β = [
-    coef(regModel)[findfirst(==("bigMA"), β_names)],
-    coef(regModel)[findfirst(==("bigMA & w_diff"), β_names)]
-]
+lnl = vec(log.(max.(lⱼ, eps(Float64))))
+lnl′ = vec(log.(max.(lⱼ′, eps(Float64))))
+lnw = vec(log.(max.(wⱼ, eps(Float64))))
+lnw′ = vec(log.(max.(wⱼ′, eps(Float64))))
+β = EstimateTwoPeriodDIDMoments(lnl, lnl′, lnw, lnw′, vec(bigMA), lnw;
+    wage_center, keep = moment_firm_mask)
 println("Reported model β (", moment_sample_label, "): ", β)
 
 #==================================================#

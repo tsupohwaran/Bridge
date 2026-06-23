@@ -328,18 +328,26 @@ function SolveZfromW(vars::NamedTuple, params::NamedTuple)
     return zⱼ
 end
 
-function EstimateTwoPeriodDIDMoments(lnl_base, lnl_counterfactual, bigMA, w;
+function _residualize(y, X_absorb)
+    return y - X_absorb * (X_absorb \ y)
+end
+
+function EstimateTwoPeriodDIDMoments(lnl_base, lnl_counterfactual,
+    lnw_base, lnw_counterfactual, bigMA, w;
     wage_center=:treated, keep=nothing)
 
     J = length(w)
     length(lnl_base) == J || error("lnl_base must have length $J")
     length(lnl_counterfactual) == J || error("lnl_counterfactual must have length $J")
+    length(lnw_base) == J || error("lnw_base must have length $J")
+    length(lnw_counterfactual) == J || error("lnw_counterfactual must have length $J")
     length(bigMA) == J || error("bigMA must have length $J")
 
     keep_mask = isnothing(keep) ? trues(J) : Bool.(keep)
     length(keep_mask) == J || error("keep must have length $J")
 
     Δlnl = Float64.(vec(lnl_counterfactual)[keep_mask] .- vec(lnl_base)[keep_mask])
+    Δlnw = Float64.(vec(lnw_counterfactual)[keep_mask] .- vec(lnw_base)[keep_mask])
     bigMA_keep = Float64.(vec(bigMA)[keep_mask])
     w_keep = Float64.(vec(w)[keep_mask])
 
@@ -354,21 +362,28 @@ function EstimateTwoPeriodDIDMoments(lnl_base, lnl_counterfactual, bigMA, w;
     w_diff = w_keep .- w_center
 
     X_absorb = hcat(ones(length(Δlnl)), w_diff)
-    X_target = hcat(bigMA_keep, w_diff .* bigMA_keep)
+    X_labor = hcat(bigMA_keep, w_diff .* bigMA_keep)
+    X_wage = reshape(bigMA_keep, :, 1)
 
     if rank(X_absorb) < size(X_absorb, 2)
-        return [Inf, Inf]
+        return [Inf, Inf, Inf]
     end
 
-    y_resid = Δlnl - X_absorb * (X_absorb \ Δlnl)
-    X_resid = X_target - X_absorb * (X_absorb \ X_target)
+    Δlnl_resid = _residualize(Δlnl, X_absorb)
+    X_labor_resid = _residualize(X_labor, X_absorb)
+    Δlnw_resid = _residualize(Δlnw, X_absorb)
+    X_wage_resid = _residualize(X_wage, X_absorb)
 
-    if rank(X_resid) < size(X_resid, 2)
-        return [Inf, Inf]
+    if rank(X_labor_resid) < size(X_labor_resid, 2)
+        return [Inf, Inf, Inf]
+    end
+    if rank(X_wage_resid) < size(X_wage_resid, 2)
+        return [Inf, Inf, Inf]
     end
 
-    β = X_resid \ y_resid
-    return [β[1], β[2]]
+    β_labor = X_labor_resid \ Δlnl_resid
+    β_wage = X_wage_resid \ Δlnw_resid
+    return [β_labor[1], β_labor[2], β_wage[1]]
 end
 
 function MomentFirmMask(J::Integer; moment_firm_mask=nothing, firm_ids=nothing,
@@ -393,19 +408,38 @@ function MomentFirmMask(J::Integer; moment_firm_mask=nothing, firm_ids=nothing,
     return keep
 end
 
+function _invalid_moments()
+    return [Inf, Inf, Inf]
+end
+
+function _unpack_calibration_params(params_to_estimate, α_fixed)
+    params = Float64.(vec(params_to_estimate))
+    if length(params) == 2
+        isnothing(α_fixed) && error("α must be supplied when params_to_estimate has length 2")
+        η, θ = params
+        α = Float64(α_fixed)
+    elseif length(params) == 3
+        η, θ, α = params
+    else
+        error("params_to_estimate must have length 2 ([η, θ]) or length 3 ([η, θ, α])")
+    end
+    return η, θ, α
+end
+
 # Compute model moments given parameters
-function ComputeModelMoments(params_to_estimate; l, d, d′, wⱼ_data, lⱼ_data, α,
+function ComputeModelMoments(params_to_estimate; l, d, d′, wⱼ_data, lⱼ_data, α=nothing,
     aⱼ_init=nothing, amenity_tol=1e-10, amenity_maxIter=5000, amenity_damp=0.5,
     inner_tol=1e-5, inner_maxIter=3000, inner_display=false, require_convergence=true,
     continuation_steps=5, employment_change=:log, wage_center=:treated,
     moment_firm_mask=nothing, firm_ids=nothing, reg_sample_ids=nothing,
     restrict_to_reg_sample::Bool=false, displayGap = false, damp_cf = nothing)
-    η, θ = params_to_estimate
+    η, θ, α = _unpack_calibration_params(params_to_estimate, α)
     continuation_steps = max(1, Int(continuation_steps))
     
     # Ensure parameters are in valid range
-    if η <= 0 || θ <= 0
-        return [Inf, Inf]
+    if η <= 0 || θ <= 0 || α <= 0 || α >= 1 ||
+        !isfinite(η) || !isfinite(θ) || !isfinite(α)
+        return _invalid_moments()
     end
     
     # Higher θ can make the counterfactual fixed point sharper, so use more damping.
@@ -420,12 +454,12 @@ function ComputeModelMoments(params_to_estimate; l, d, d′, wⱼ_data, lⱼ_dat
         displaySummary=inner_display, displayGap = displayGap, returnInfo=true)
     zⱼ, aⱼ = primitives.zⱼ, primitives.aⱼ
     if require_convergence && !primitives.amenity_converged
-        return [Inf, Inf]
+        return _invalid_moments()
     end
     
     # Check for invalid zⱼ
     if any(isnan.(zⱼ)) || any(isinf.(zⱼ)) || any(isnan.(aⱼ)) || any(isinf.(aⱼ))
-        return [Inf, Inf]
+        return _invalid_moments()
     end
     
     # Step 2b: Use the inverted baseline directly. By construction, the
@@ -437,7 +471,7 @@ function ComputeModelMoments(params_to_estimate; l, d, d′, wⱼ_data, lⱼ_dat
     
     # Check for invalid wages
     if any(isnan.(wⱼ)) || any(isinf.(wⱼ))
-        return [Inf, Inf]
+        return _invalid_moments()
     end
     
     # Step 2c: Solve counterfactual model along a commuting-time path.
@@ -458,7 +492,7 @@ function ComputeModelMoments(params_to_estimate; l, d, d′, wⱼ_data, lⱼ_dat
             wⱼ_init=wⱼ_cf_init, displaySummary=inner_display, displayGap=displayGap, returnInfo=true)
 
         if require_convergence && !cf.converged
-            return [Inf, Inf]
+            return _invalid_moments()
         end
 
         wⱼ_cf_init = cf.wⱼ
@@ -467,7 +501,7 @@ function ComputeModelMoments(params_to_estimate; l, d, d′, wⱼ_data, lⱼ_dat
 
     # Check for invalid counterfactual wages
     if any(isnan.(wⱼ′)) || any(isinf.(wⱼ′))
-        return [Inf, Inf]
+        return _invalid_moments()
     end
     
     # Step 2d: Compute regression moments from appended two-period firm data.
@@ -481,21 +515,114 @@ function ComputeModelMoments(params_to_estimate; l, d, d′, wⱼ_data, lⱼ_dat
         restrict_to_reg_sample)
     lnl = vec(log.(max.(lⱼ, eps(Float64))))
     lnl′ = vec(log.(max.(lⱼ′, eps(Float64))))
+    lnw = vec(log.(max.(wⱼ, eps(Float64))))
+    lnw′ = vec(log.(max.(wⱼ′, eps(Float64))))
 
-    return EstimateTwoPeriodDIDMoments(lnl, lnl′, bigMA, w; wage_center, keep)
+    return EstimateTwoPeriodDIDMoments(lnl, lnl′, lnw, lnw′, bigMA, w;
+        wage_center, keep)
+end
+
+function ComputeModelMomentsFixedPrimitives(params_to_estimate; l, d, d′, wⱼ_data,
+    lⱼ_data, fixed_primitives, α=nothing, inner_tol=1e-5, inner_maxIter=3000,
+    inner_display=false, require_convergence=true, continuation_steps=5,
+    employment_change=:log, wage_center=:treated, moment_firm_mask=nothing,
+    firm_ids=nothing, reg_sample_ids=nothing, restrict_to_reg_sample::Bool=false,
+    displayGap=false, damp_base=nothing, damp_cf=nothing)
+
+    η, θ, α = _unpack_calibration_params(params_to_estimate, α)
+    continuation_steps = max(1, Int(continuation_steps))
+
+    if η <= 0 || θ <= 0 || α <= 0 || α >= 1 ||
+        !isfinite(η) || !isfinite(θ) || !isfinite(α)
+        return _invalid_moments()
+    end
+
+    J = size(d, 2)
+    length(wⱼ_data) == J || error("wⱼ_data must have length $J")
+    length(lⱼ_data) == J || error("lⱼ_data must have length $J")
+    hasproperty(fixed_primitives, :zⱼ) ||
+        error("fixed_primitives must contain zⱼ")
+    hasproperty(fixed_primitives, :aⱼ) ||
+        error("fixed_primitives must contain aⱼ")
+
+    zⱼ = vec(Float64.(fixed_primitives.zⱼ))
+    aⱼ = vec(Float64.(fixed_primitives.aⱼ))
+    length(zⱼ) == J || error("fixed_primitives.zⱼ must have length $J")
+    length(aⱼ) == J || error("fixed_primitives.aⱼ must have length $J")
+    if any(isnan.(zⱼ)) || any(isinf.(zⱼ)) || any(isnan.(aⱼ)) || any(isinf.(aⱼ))
+        return _invalid_moments()
+    end
+
+    params = (; η, θ, α)
+    damp_default = clamp(0.65 + 0.085 * θ, 0.75, 0.97)
+    damp_base = isnothing(damp_base) ? damp_default : damp_base
+    damp_cf = isnothing(damp_cf) ? damp_default : damp_cf
+
+    base = SolveModel((; l, d, zⱼ, aⱼ), params;
+        damp=damp_base, tol=inner_tol, power=false, maxIter=inner_maxIter,
+        wⱼ_init=wⱼ_data, displaySummary=inner_display, displayGap=displayGap,
+        returnInfo=true)
+    if require_convergence && !base.converged
+        return _invalid_moments()
+    end
+    if any(isnan.(base.wⱼ)) || any(isinf.(base.wⱼ))
+        return _invalid_moments()
+    end
+
+    cf = nothing
+    wⱼ_cf_init = base.wⱼ
+    log_d = log.(d)
+    log_d′ = log.(d′)
+    for step in 1:continuation_steps
+        path_share = step / continuation_steps
+        d_path = exp.((1 - path_share) .* log_d .+ path_share .* log_d′)
+        vars_cf = (; l, d = d_path, zⱼ, aⱼ)
+        if inner_display && continuation_steps > 1
+            println("Counterfactual continuation step ", step, "/", continuation_steps)
+        end
+        cf = SolveModel(vars_cf, params;
+            damp=damp_cf, tol=inner_tol, power=false, maxIter=inner_maxIter,
+            wⱼ_init=wⱼ_cf_init, displaySummary=inner_display,
+            displayGap=displayGap, returnInfo=true)
+        if require_convergence && !cf.converged
+            return _invalid_moments()
+        end
+        wⱼ_cf_init = cf.wⱼ
+    end
+    if any(isnan.(cf.wⱼ)) || any(isinf.(cf.wⱼ))
+        return _invalid_moments()
+    end
+
+    # employment_change is kept in the signature for caller compatibility; this
+    # DID specification uses log employment levels, matching the lnl outcome.
+    dMA = vec(l' * d .- l' * d′) |> x -> replace(x, -Inf => -8)
+    bigMA = Float64.(dMA .>= 0.5)
+
+    w = vec(log.(max.(wⱼ_data, eps(Float64))))
+    keep = MomentFirmMask(length(w); moment_firm_mask, firm_ids, reg_sample_ids,
+        restrict_to_reg_sample)
+    lnl = vec(log.(max.(base.lⱼ, eps(Float64))))
+    lnl′ = vec(log.(max.(cf.lⱼ, eps(Float64))))
+    lnw = vec(log.(max.(base.wⱼ, eps(Float64))))
+    lnw′ = vec(log.(max.(cf.wⱼ, eps(Float64))))
+
+    return EstimateTwoPeriodDIDMoments(lnl, lnl′, lnw, lnw′, bigMA, w;
+        wage_center, keep)
 end
 
 # Objective function for estimation
-function ObjectiveFunction(params_to_estimate; l, d, d′, wⱼ_data, lⱼ_data, α, β_target,
+function ObjectiveFunction(params_to_estimate; l, d, d′, wⱼ_data, lⱼ_data, β_target, α=nothing,
     aⱼ_init=nothing, amenity_tol=1e-10, amenity_maxIter=5000, amenity_damp=0.5,
     verbose=false, inner_tol=1e-5, inner_maxIter=3000, inner_display=false,
     require_convergence=true, continuation_steps=5, employment_change=:log,
     wage_center=:treated, max_abs_moment=10.0, moment_firm_mask=nothing,
     firm_ids=nothing, reg_sample_ids=nothing, restrict_to_reg_sample::Bool=false)
-    η, θ = params_to_estimate
+    length(β_target) == 3 || error("β_target must have length 3")
+    η, θ, α_est = _unpack_calibration_params(params_to_estimate, α)
     
     # Return large penalty for invalid parameters
-    if η <= 0 || θ <= 0 || !isfinite(η) || !isfinite(θ)
+    if η <= 0 || θ <= 0 || α_est <= 0 || α_est >= 1 ||
+        !isfinite(η) || !isfinite(θ) || !isfinite(α_est)
         return 1e10
     end
     
@@ -518,39 +645,70 @@ function ObjectiveFunction(params_to_estimate; l, d, d′, wⱼ_data, lⱼ_data,
     obj = sum(diff .^ 2)
     
     if verbose
-        println("η=$η, θ=$θ → β_model=$β_model, obj=$obj")
+        println("η=$η, θ=$θ, α=$α_est → β_model=$β_model, obj=$obj")
     end
     
     return obj
 end
 
-function EvaluateCalibrationGrid(; l, d, d′, wⱼ_data, lⱼ_data, α, β_target,
-    η_grid, θ_grid, inner_tol=2e-5, inner_maxIter=3000,
+function EvaluateCalibrationGrid(; l, d, d′, wⱼ_data, lⱼ_data, β_target, α=nothing,
+    η_grid, θ_grid, α_grid=nothing, inner_tol=2e-5, inner_maxIter=3000,
     aⱼ_init=nothing, amenity_tol=1e-10, amenity_maxIter=5000, amenity_damp=0.5,
     continuation_steps=5, employment_change=:log, wage_center=:treated,
     max_abs_moment=10.0, verbose=true, moment_firm_mask=nothing,
-    firm_ids=nothing, reg_sample_ids=nothing, restrict_to_reg_sample::Bool=false)
+    firm_ids=nothing, reg_sample_ids=nothing, restrict_to_reg_sample::Bool=false,
+    fixed_primitives=nothing)
 
-    results = DataFrame(
-        η = Float64[],
-        θ = Float64[],
-        β1 = Float64[],
-        β2 = Float64[],
-        objective = Float64[]
-    )
+    length(β_target) == 3 || error("β_target must have length 3")
+    if isnothing(α_grid)
+        isnothing(α) && error("Either α_grid or fixed α must be supplied")
+        α_values = [Float64(α)]
+    else
+        α_values = Float64.(α_grid)
+    end
 
-    total = length(η_grid) * length(θ_grid)
-    counter = 0
-    for η in η_grid, θ in θ_grid
-        counter += 1
-        β_model = ComputeModelMoments([η, θ]; l, d, d′, wⱼ_data, lⱼ_data, α,
-            inner_tol=inner_tol, inner_maxIter=inner_maxIter,
-            inner_display=false, require_convergence=true,
-            aⱼ_init=aⱼ_init, amenity_tol=amenity_tol, amenity_maxIter=amenity_maxIter,
-            amenity_damp=amenity_damp, continuation_steps=continuation_steps,
-            employment_change=employment_change, wage_center=wage_center,
-            moment_firm_mask=moment_firm_mask, firm_ids=firm_ids,
-            reg_sample_ids=reg_sample_ids, restrict_to_reg_sample=restrict_to_reg_sample)
+    grid_points = [(Float64(η), Float64(θ), Float64(α_value))
+        for η in η_grid for θ in θ_grid for α_value in α_values]
+    total = length(grid_points)
+    η_col = Vector{Float64}(undef, total)
+    θ_col = Vector{Float64}(undef, total)
+    α_col = Vector{Float64}(undef, total)
+    β_labor_bigMA_col = Vector{Float64}(undef, total)
+    β_labor_bigMA_wdiff_col = Vector{Float64}(undef, total)
+    β_wage_bigMA_col = Vector{Float64}(undef, total)
+    objective_col = Vector{Float64}(undef, total)
+    progress = Ref(0)
+    progress_lock = ReentrantLock()
+
+    if verbose
+        println("Evaluating ", total, " calibration grid points with ",
+            Threads.nthreads(), " Julia thread(s).")
+    end
+
+    Threads.@threads :dynamic for idx in eachindex(grid_points)
+        η, θ, α_value = grid_points[idx]
+        if isnothing(fixed_primitives)
+            β_model = ComputeModelMoments([η, θ, α_value]; l, d, d′, wⱼ_data, lⱼ_data,
+                inner_tol=inner_tol, inner_maxIter=inner_maxIter,
+                inner_display=false, require_convergence=true,
+                aⱼ_init=aⱼ_init, amenity_tol=amenity_tol,
+                amenity_maxIter=amenity_maxIter, amenity_damp=amenity_damp,
+                continuation_steps=continuation_steps,
+                employment_change=employment_change, wage_center=wage_center,
+                moment_firm_mask=moment_firm_mask, firm_ids=firm_ids,
+                reg_sample_ids=reg_sample_ids,
+                restrict_to_reg_sample=restrict_to_reg_sample)
+        else
+            β_model = ComputeModelMomentsFixedPrimitives([η, θ, α_value];
+                l, d, d′, wⱼ_data, lⱼ_data, fixed_primitives,
+                inner_tol=inner_tol, inner_maxIter=inner_maxIter,
+                inner_display=false, require_convergence=true,
+                continuation_steps=continuation_steps,
+                employment_change=employment_change, wage_center=wage_center,
+                moment_firm_mask=moment_firm_mask, firm_ids=firm_ids,
+                reg_sample_ids=reg_sample_ids,
+                restrict_to_reg_sample=restrict_to_reg_sample)
+        end
 
         if any(isnan.(β_model)) || any(isinf.(β_model)) || any(abs.(β_model) .> max_abs_moment)
             obj = 1e10
@@ -558,13 +716,36 @@ function EvaluateCalibrationGrid(; l, d, d′, wⱼ_data, lⱼ_data, α, β_targ
             obj = sum((β_model .- β_target) .^ 2)
         end
 
-        push!(results, (η, θ, β_model[1], β_model[2], obj))
+        η_col[idx] = η
+        θ_col[idx] = θ
+        α_col[idx] = α_value
+        β_labor_bigMA_col[idx] = β_model[1]
+        β_labor_bigMA_wdiff_col[idx] = β_model[2]
+        β_wage_bigMA_col[idx] = β_model[3]
+        objective_col[idx] = obj
+
         if verbose
-            println("Grid ", counter, "/", total, ": η=", η, ", θ=", θ,
-                " → β_model=", β_model, ", obj=", obj)
+            lock(progress_lock)
+            try
+                progress[] += 1
+                println("Grid ", progress[], "/", total,
+                    " (thread ", Threads.threadid(), "): η=", η, ", θ=", θ,
+                    ", α=", α_value, " → β_model=", β_model, ", obj=", obj)
+            finally
+                unlock(progress_lock)
+            end
         end
     end
 
+    results = DataFrame(
+        η = η_col,
+        θ = θ_col,
+        α = α_col,
+        β_labor_bigMA = β_labor_bigMA_col,
+        β_labor_bigMA_wdiff = β_labor_bigMA_wdiff_col,
+        β_wage_bigMA = β_wage_bigMA_col,
+        objective = objective_col
+    )
     sort!(results, :objective)
     return results
 end
@@ -576,6 +757,121 @@ end
 
 function _unconstrained_to_box(y, lower, upper)
     return lower .+ (upper .- lower) ./ (1 .+ exp.(-Float64.(y)))
+end
+
+function CalibrateEtaThetaAlpha(; l, d, d′, wⱼ_data, lⱼ_data, β_target, α=nothing,
+    x0=[0.5, 50.0, 0.4], starts=nothing, lower=[0.1, 1.0, 0.1],
+    upper=[1.0, 100.0, 0.9], iterations=250, x_abstol=1e-4, f_reltol=1e-8,
+    aⱼ_init=nothing, amenity_tol=1e-10, amenity_maxIter=5000, amenity_damp=0.5,
+    inner_tol=1e-5, inner_maxIter=3000, continuation_steps=5,
+    employment_change=:log, wage_center=:treated, max_abs_moment=10.0,
+    verbose=true, show_trace=true, moment_firm_mask=nothing, firm_ids=nothing,
+    reg_sample_ids=nothing, restrict_to_reg_sample::Bool=false)
+
+    length(β_target) == 3 || error("β_target must have length 3")
+    estimate_alpha = isnothing(α)
+    α_fixed = estimate_alpha ? nothing : Float64(α)
+    if !estimate_alpha && (α_fixed <= 0 || α_fixed >= 1 || !isfinite(α_fixed))
+        error("fixed α must be finite and lie between 0 and 1")
+    end
+
+    n_estimated = estimate_alpha ? 3 : 2
+    lower = Float64.(lower)
+    upper = Float64.(upper)
+    if !estimate_alpha && length(lower) == 3
+        lower = lower[1:2]
+    end
+    if !estimate_alpha && length(upper) == 3
+        upper = upper[1:2]
+    end
+    length(lower) == n_estimated ||
+        error("lower must have length $n_estimated")
+    length(upper) == n_estimated ||
+        error("upper must have length $n_estimated")
+
+    function estimated_start_vector(start, label)
+        start_vec = Float64.(vec(start))
+        if length(start_vec) == n_estimated
+            return start_vec
+        elseif !estimate_alpha && length(start_vec) == 3
+            return start_vec[1:2]
+        else
+            error("$label must have length $n_estimated" *
+                  (estimate_alpha ? "" : " ([η, θ]) or length 3 ([η, θ, α])"))
+        end
+    end
+
+    full_parameters(x) = estimate_alpha ? x : [x[1], x[2], α_fixed]
+
+    function objective_y(y)
+        x = _unconstrained_to_box(y, lower, upper)
+        return ObjectiveFunction(x; l, d, d′, wⱼ_data, lⱼ_data, β_target, α=α_fixed,
+            aⱼ_init=aⱼ_init, amenity_tol=amenity_tol, amenity_maxIter=amenity_maxIter,
+            amenity_damp=amenity_damp, verbose=verbose, inner_tol=inner_tol,
+            inner_maxIter=inner_maxIter, inner_display=false, require_convergence=true,
+            continuation_steps=continuation_steps, employment_change=employment_change,
+            wage_center=wage_center, max_abs_moment=max_abs_moment,
+            moment_firm_mask=moment_firm_mask, firm_ids=firm_ids,
+            reg_sample_ids=reg_sample_ids,
+            restrict_to_reg_sample=restrict_to_reg_sample)
+    end
+
+    default_start = isnothing(x0) ? (lower .+ upper) ./ 2 : estimated_start_vector(x0, "x0")
+    start_list = isnothing(starts) ? [default_start] : starts
+    isempty(start_list) && error("CalibrateEtaThetaAlpha requires at least one starting value")
+    runs = NamedTuple[]
+    best_run = nothing
+
+    for (start_id, start) in enumerate(start_list)
+        start_vec = estimated_start_vector(start, "Each calibration start")
+        x_start = clamp.(start_vec, lower .+ 1e-8, upper .- 1e-8)
+        y0 = _box_to_unconstrained(x_start, lower, upper)
+
+        if verbose
+            println("\nLocal calibration start ", start_id, "/", length(start_list),
+                ": x0=", x_start)
+        end
+
+        result = optimize(
+            objective_y,
+            y0,
+            NelderMead(),
+            Optim.Options(
+                show_trace = show_trace,
+                iterations = iterations,
+                x_abstol = x_abstol,
+                f_reltol = f_reltol
+            )
+        )
+
+        estimated_params = _unconstrained_to_box(Optim.minimizer(result), lower, upper)
+        params = full_parameters(estimated_params)
+        run = (;
+            parameters = params,
+            estimated_parameters = estimated_params,
+            objective = Optim.minimum(result),
+            converged = Optim.converged(result),
+            result,
+            start = x_start
+        )
+        push!(runs, run)
+
+        if isnothing(best_run) || run.objective < best_run.objective
+            best_run = run
+        end
+    end
+
+    return (;
+        parameters = best_run.parameters,
+        objective = best_run.objective,
+        converged = best_run.converged,
+        result = best_run.result,
+        runs,
+        estimated_parameters = best_run.estimated_parameters,
+        fixed_alpha = α_fixed,
+        lower,
+        upper
+    )
 end
 
 function CalibrateEtaTheta(; l, d, d′, wⱼ_data, lⱼ_data, α, β_target,
