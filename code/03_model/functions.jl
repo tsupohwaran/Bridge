@@ -328,13 +328,62 @@ function SolveZfromW(vars::NamedTuple, params::NamedTuple)
     return zⱼ
 end
 
-function _residualize(y, X_absorb)
-    return y - X_absorb * (X_absorb \ y)
+function _twoperiod_fe_dataframe(y_base, y_counterfactual, bigMA, w_diff, cluster)
+    n_firms = length(y_base)
+    firm = repeat(collect(1:n_firms), inner=2)
+    period = repeat([0, 1], n_firms)
+    y = vec(reshape(vcat(y_base', y_counterfactual'), 2 * n_firms))
+    w_diff_long = repeat(w_diff, inner=2)
+    big_long = repeat(bigMA, inner=2)
+    post = Float64.(period)
+
+    df = DataFrame(
+        y = y,
+        firm = firm,
+        period = period,
+        w_diff = w_diff_long,
+        big_post = big_long .* post,
+        big_wdiff_post = big_long .* w_diff_long .* post,
+    )
+    if !isnothing(cluster)
+        any(ismissing, cluster) && error("cluster cannot contain missing values in the kept sample")
+        df[!, :cluster] = repeat(string.(cluster), inner=2)
+    end
+    return df
+end
+
+function _coef_positions(model, names)
+    model_names = string.(coefnames(model))
+    positions = [findfirst(==(name), model_names) for name in names]
+    any(isnothing, positions) && error("Missing coefficient(s): " *
+        join(names[isnothing.(positions)], ", "))
+    return Int.(positions)
+end
+
+function _twoperiod_fixed_effect_model(y_base, y_counterfactual, bigMA, w_diff;
+    cluster=nothing, include_wdiff_interaction::Bool=true)
+
+    df = _twoperiod_fe_dataframe(y_base, y_counterfactual, bigMA, w_diff, cluster)
+    rhs = include_wdiff_interaction ?
+        term(:big_post) + term(:big_wdiff_post) + fe(:firm) + fe(:period) +
+            fe(:period)&term(:w_diff) :
+        term(:big_post) + fe(:firm) + fe(:period) + fe(:period)&term(:w_diff)
+    formula = term(:y) ~ rhs
+    model = isnothing(cluster) ? reg(df, formula) : reg(df, formula, Vcov.cluster(:cluster))
+    wanted = include_wdiff_interaction ? ["big_post", "big_wdiff_post"] : ["big_post"]
+    idx = _coef_positions(model, wanted)
+    beta = coef(model)[idx]
+    vc = vcov(model)[idx, idx]
+    se = sqrt.(diag(vc))
+    t = beta ./ se
+    n_clusters = isnothing(cluster) ? missing : length(unique(string.(cluster)))
+    return (; model, beta, se, t, vcov=vc, n=nobs(model), n_clusters,
+        df=dof_residual(model))
 end
 
 function EstimateTwoPeriodDIDMoments(lnl_base, lnl_counterfactual,
     lnw_base, lnw_counterfactual, bigMA, w;
-    wage_center=:treated, keep=nothing)
+    wage_center=:treated, keep=nothing, cluster=nothing, return_stats::Bool=false)
 
     J = length(w)
     length(lnl_base) == J || error("lnl_base must have length $J")
@@ -345,11 +394,24 @@ function EstimateTwoPeriodDIDMoments(lnl_base, lnl_counterfactual,
 
     keep_mask = isnothing(keep) ? trues(J) : Bool.(keep)
     length(keep_mask) == J || error("keep must have length $J")
+    if !isnothing(cluster)
+        length(cluster) == J || error("cluster must have length $J")
+    end
 
-    Δlnl = Float64.(vec(lnl_counterfactual)[keep_mask] .- vec(lnl_base)[keep_mask])
-    Δlnw = Float64.(vec(lnw_counterfactual)[keep_mask] .- vec(lnw_base)[keep_mask])
+    lnl_base_keep = Float64.(vec(lnl_base)[keep_mask])
+    lnl_counterfactual_keep = Float64.(vec(lnl_counterfactual)[keep_mask])
+    lnw_base_keep = Float64.(vec(lnw_base)[keep_mask])
+    lnw_counterfactual_keep = Float64.(vec(lnw_counterfactual)[keep_mask])
     bigMA_keep = Float64.(vec(bigMA)[keep_mask])
     w_keep = Float64.(vec(w)[keep_mask])
+    cluster_keep = isnothing(cluster) ? nothing : collect(cluster)[keep_mask]
+
+    invalid = return_stats ?
+        (; beta = [Inf, Inf, Inf], se = [Inf, Inf, Inf], t = [Inf, Inf, Inf],
+            vcov_labor = fill(Inf, 2, 2), vcov_wage = fill(Inf, 1, 1),
+            n = length(lnl_base_keep), n_clusters = fill(missing, 3), df = fill(missing, 3),
+            model_labor = nothing, model_wage = nothing) :
+        [Inf, Inf, Inf]
 
     if wage_center == :treated
         treated = bigMA_keep .== 1
@@ -361,29 +423,32 @@ function EstimateTwoPeriodDIDMoments(lnl_base, lnl_counterfactual,
     end
     w_diff = w_keep .- w_center
 
-    X_absorb = hcat(ones(length(Δlnl)), w_diff)
-    X_labor = hcat(bigMA_keep, w_diff .* bigMA_keep)
-    X_wage = reshape(bigMA_keep, :, 1)
+    try
+        labor = _twoperiod_fixed_effect_model(lnl_base_keep, lnl_counterfactual_keep,
+            bigMA_keep, w_diff; cluster=cluster_keep, include_wdiff_interaction=true)
+        wage = _twoperiod_fixed_effect_model(lnw_base_keep, lnw_counterfactual_keep,
+            bigMA_keep, w_diff; cluster=cluster_keep, include_wdiff_interaction=false)
 
-    if rank(X_absorb) < size(X_absorb, 2)
-        return [Inf, Inf, Inf]
+        beta = [labor.beta[1], labor.beta[2], wage.beta[1]]
+        if !return_stats
+            return beta
+        end
+
+        se = [labor.se[1], labor.se[2], wage.se[1]]
+        t = [labor.t[1], labor.t[2], wage.t[1]]
+        n_clusters = isnothing(cluster_keep) ? fill(missing, 3) :
+            [labor.n_clusters, labor.n_clusters, wage.n_clusters]
+        df = [labor.df, labor.df, wage.df]
+
+        return (; beta, se, t, vcov_labor=labor.vcov, vcov_wage=wage.vcov,
+            n=labor.n, n_clusters, df, model_labor=labor.model,
+            model_wage=wage.model)
+    catch err
+        if err isa InterruptException
+            rethrow(err)
+        end
+        return invalid
     end
-
-    Δlnl_resid = _residualize(Δlnl, X_absorb)
-    X_labor_resid = _residualize(X_labor, X_absorb)
-    Δlnw_resid = _residualize(Δlnw, X_absorb)
-    X_wage_resid = _residualize(X_wage, X_absorb)
-
-    if rank(X_labor_resid) < size(X_labor_resid, 2)
-        return [Inf, Inf, Inf]
-    end
-    if rank(X_wage_resid) < size(X_wage_resid, 2)
-        return [Inf, Inf, Inf]
-    end
-
-    β_labor = X_labor_resid \ Δlnl_resid
-    β_wage = X_wage_resid \ Δlnw_resid
-    return [β_labor[1], β_labor[2], β_wage[1]]
 end
 
 function MomentFirmMask(J::Integer; moment_firm_mask=nothing, firm_ids=nothing,

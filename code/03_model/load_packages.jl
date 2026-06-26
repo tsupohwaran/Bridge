@@ -16,6 +16,7 @@ using LinearAlgebra,
     CSV, # read and write csv files
     DataFrames, # same as .dta in Stata
     GLM, # for regression analysis
+    FixedEffectModels, # high-dimensional fixed effects and clustered SEs
 
     # Other packages
     AppleAccelerate, # Apple's BLAS !!!Warning: only for MacOS!!!
@@ -23,4 +24,3 @@ using LinearAlgebra,
     ClipData, # copy data
     Plots,
     StatsPlots
-

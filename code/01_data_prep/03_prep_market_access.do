@@ -35,7 +35,7 @@ replace id = group if id == ""
 
 * keep relevant variables for market accessibility calculation
 * keep id z longitude latitude
-keep id year longitude latitude wage_inital_2010 wage_inital_2011 employ
+keep id year longitude latitude wage_inital_2010 wage_inital_2011 employ ind_code2
 
 * merge town info based on firm coordinates
 geoinpoly latitude longitude using "$geo_raw_path/shapefiles/town_coord.dta"

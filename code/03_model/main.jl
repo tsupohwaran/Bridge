@@ -81,6 +81,19 @@ moment_sample_label = restrict_to_reg_sample ? "matched regression sample" : "fu
 println("Model moment sample firms: ", sum(moment_firm_mask), "/", J,
     " in ", moment_sample_label);
 
+firm_ind = df[1:Z:end, :ind_code2];
+
+# `df` is a firm-by-origin-town commute matrix, so its `town` column is not the
+# firm-location town used by Stata's cluster(town2#ind).
+df_reg_full = DataFrame(load(projPath * "/data/regression/processed/regression_qingdao_07_20.dta"));
+firm_town_source = df_reg_full[in.(df_reg_full.year, Ref([2010, 2012])), [:id, :town]];
+dropmissing!(firm_town_source, [:id, :town]);
+firm_town_by_id = combine(groupby(firm_town_source, :id), :town => first => :firm_town);
+firm_town_lookup = Dict(row.id => row.firm_town for row in eachrow(firm_town_by_id));
+firm_town = [get(firm_town_lookup, id, missing) for id in firm_ids];
+town_ind_cluster = [ismissing(town) || ismissing(ind) ? missing : string(town, "#", ind)
+    for (town, ind) in zip(firm_town, firm_ind)];
+
 #==================================================#
 # Calibration: Back out η and θ from labor and wage moments with fixed α
 #==================================================#
@@ -106,12 +119,12 @@ wage_center = :all
 # use grid search to find good starting points for the optimization
 η_grid = [0.5, 0.7, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0]
 θ_grid = [0.1, 0.5, 1.0, 5.0, 10.0]
-# α_grid = [0.2, 0.4, 0.6, 0.8]
+α_grid = [0.2, 0.4, 0.6, 0.8]
 grid_results = EvaluateCalibrationGrid(;
     l, d, d′, wⱼ_data, lⱼ_data, β_target, 
-    α = α_fixed,
+    # α = α_fixed,
+    α_grid,
     η_grid, θ_grid,
-    aⱼ_init,
     inner_tol = 2e-5,
     inner_maxIter = 3000,
     continuation_steps = 5,
@@ -186,7 +199,7 @@ println("Fixed α: ", α_est)
 # Simulation using calibrated η, θ, and α
 #==================================================#
 
-η, θ, α = [3, 5.0, 0.6]
+η, θ, α = [3.742411481046953, 4.950962175934991, 0.4]
 
 # Solve firm amenities and productivity from observed employment and wages
 vars = (; wⱼ = wⱼ_data, lⱼ = lⱼ_data, l, d)
@@ -227,9 +240,15 @@ lnl = vec(log.(max.(lⱼ, eps(Float64))))
 lnl′ = vec(log.(max.(lⱼ′, eps(Float64))))
 lnw = vec(log.(max.(wⱼ, eps(Float64))))
 lnw′ = vec(log.(max.(wⱼ′, eps(Float64))))
-β = EstimateTwoPeriodDIDMoments(lnl, lnl′, lnw, lnw′, vec(bigMA), lnw;
-    wage_center, keep = moment_firm_mask)
+β_report = EstimateTwoPeriodDIDMoments(lnl, lnl′, lnw, lnw′, vec(bigMA), lnw;
+    wage_center, keep = moment_firm_mask, cluster = town_ind_cluster,
+    return_stats = true)
+β = β_report.beta
 println("Reported model β (", moment_sample_label, "): ", β)
+show(DataFrame(moment = moment_order, beta = β_report.beta, se = β_report.se,
+    t = β_report.t, n_clusters = β_report.n_clusters, df = β_report.df),
+    allrows = true, allcols = true)
+println()
 
 #==================================================#
 # Plot
@@ -244,7 +263,7 @@ w_color_limit = w_color_limit > 0 ? w_color_limit : maximum(abs.(plot_w_color))
 w_color_limit = max(w_color_limit, eps(Float64))
 w_color_clims = (-w_color_limit, w_color_limit)
 
-# labor
+# Plot model labor reallocation for matched sample
 begin
     sorted_idx = sortperm(vec(wⱼ))
     scatter(vec(ln_dMA)[sorted_idx], vec(clamp.(dlnlⱼ, -Inf, 5))[sorted_idx], 
@@ -259,6 +278,71 @@ begin
         markersize = 3,
         alpha = 0.6,
         dpi = 1000)
+end
+
+# Plot real-data labor reallocation for regression sample
+begin
+    reg_sample_id_set = Set(string.(reg_sample_ids))
+    reg_year_mask = coalesce.(in.(df_reg_full.year, Ref([2010, 2012])), false)
+    reg_id_mask = in.(string.(df_reg_full.id), Ref(reg_sample_id_set))
+    reg_labor_raw = df_reg_full[reg_year_mask .& reg_id_mask,
+        [:id, :year, :employ, :dma, :wage_total]]
+    dropmissing!(reg_labor_raw, [:id, :year, :employ, :dma, :wage_total])
+    disallowmissing!(reg_labor_raw, [:id, :year, :employ, :dma, :wage_total])
+    reg_labor_raw = reg_labor_raw[
+        (Float64.(reg_labor_raw.employ) .> 0) .&
+        (Float64.(reg_labor_raw.wage_total) .> 0), :]
+
+    if nrow(reg_labor_raw) == 0
+        @warn "Skipping real-data labor reallocation plot: no matched 2010/2012 observations."
+    else
+        reg_labor_raw[!, :lnemp] = log.(Float64.(reg_labor_raw.employ))
+        reg_labor_raw[!, :lnw] =
+            log.(Float64.(reg_labor_raw.wage_total) ./ Float64.(reg_labor_raw.employ))
+
+        reg_lnw0 = reg_labor_raw.lnw[reg_labor_raw.year .== 2010]
+        reg_wlo, reg_whi = quantile(reg_lnw0, [0.05, 0.95])
+        reg_labor_raw[!, :lnw_winsor] = clamp.(reg_labor_raw.lnw, reg_wlo, reg_whi)
+
+        reg_base = select(reg_labor_raw[reg_labor_raw.year .== 2010, :],
+            :id, :lnemp => :lnemp_2010, :dma => :dma, :lnw_winsor => :lnw0)
+        reg_post = select(reg_labor_raw[reg_labor_raw.year .== 2012, :],
+            :id, :lnemp => :lnemp_2012)
+        sort!(reg_base, :id); unique!(reg_base, :id)
+        sort!(reg_post, :id); unique!(reg_post, :id)
+
+        reg_labor_plot = innerjoin(reg_base, reg_post, on = :id)
+        if nrow(reg_labor_plot) > 0
+            reg_labor_plot[!, :dlnemp] =
+                reg_labor_plot.lnemp_2012 .- reg_labor_plot.lnemp_2010
+            reg_labor_plot[!, :dlnemp_clip] = min.(reg_labor_plot.dlnemp, 5.0)
+            reg_labor_plot[!, :wdiff] = reg_labor_plot.lnw0 .- mean(reg_labor_plot.lnw0)
+
+            reg_dma = Float64.(reg_labor_plot.dma)
+            reg_positive_ln_dma = log.(reg_dma[reg_dma .> 0])
+            reg_ln_dma_floor = isempty(reg_positive_ln_dma) ? -8.0 :
+                minimum(reg_positive_ln_dma) - 0.1
+            reg_labor_plot[!, :ln_dMA] = [dma > 0 ? log(dma) : reg_ln_dma_floor
+                for dma in reg_dma]
+
+            reg_sorted_idx = sortperm(reg_labor_plot.lnw0)
+
+            p_real_labor = scatter(reg_labor_plot.ln_dMA[reg_sorted_idx],
+                reg_labor_plot.dlnemp_clip[reg_sorted_idx],
+                marker_z = reg_labor_plot.wdiff[reg_sorted_idx],
+                color = :RdBu,
+                colorbar = true,
+                colorbar_title = "ln w0 - mean(ln w0)",
+                xlabel = "ln(dMA)", 
+                ylabel = "dlnlⱼ",
+                title = "Employment Change vs Market Access Change",
+                legend = false,
+                markersize = 3,
+                alpha = 0.6,
+                dpi = 1000)
+            savefig(p_real_labor, projPath * "/output/figures/labor_reallocation_realdata_julia.png")
+        end
+    end
 end
 
 begin
@@ -279,7 +363,72 @@ begin
 end
 savefig(projPath * "/output/figures/labor_change.png")
 
-scatter(vec(dMA), vec(log.(lⱼ)), 
+#==================================================#
+# Diagnostic: differential wage-slope of Δemployment
+# Mirrors the labor moment β₂ (labor_bigMA_wdiff).
+# The two-period firm+period FE DiD first-differences to
+#   dlnlⱼ = c + γ·w_diff + β₁·treated + β₂·(treated·w_diff) + ε,
+# so the treated-minus-control gap in the dlnl-on-w_diff slope IS β₂.
+# We plot dlnl vs initial wage deviation, split by treatment, with
+# binned means (to cut through the cloud) and within-group OLS lines.
+#==================================================#
+begin
+    mask         = vec(moment_firm_mask)
+    wdiff_plot   = plot_w_color[mask]            # ln wⱼ - mean, same centering as the reg
+    dlnl_plot    = vec(dlnlⱼ)[mask]
+    treated_plot = vec(bigMA)[mask] .== 1
+
+    # quantile-binned group means of y against x
+    binmeans = function (x, y; nbins = 20)
+        edges = quantile(x, range(0, 1, length = nbins + 1))
+        edges[1] -= eps(); edges[end] += eps()
+        bin = clamp.(searchsortedlast.(Ref(edges), x), 1, nbins)
+        present = [b for b in 1:nbins if any(bin .== b)]
+        (xb = [mean(x[bin .== b]) for b in present],
+         yb = [mean(y[bin .== b]) for b in present])
+    end
+
+    diag_df  = DataFrame(dlnl = dlnl_plot, wdiff = wdiff_plot, treated = treated_plot)
+    fit_ctrl = lm(@formula(dlnl ~ wdiff), diag_df[.!diag_df.treated, :])
+    fit_trt  = lm(@formula(dlnl ~ wdiff), diag_df[diag_df.treated, :])
+    slope_ctrl, slope_trt = coef(fit_ctrl)[2], coef(fit_trt)[2]
+
+    xgrid    = range(minimum(wdiff_plot), maximum(wdiff_plot), length = 100)
+    pred(f)  = coef(f)[1] .+ coef(f)[2] .* xgrid
+    bc_ctrl  = binmeans(wdiff_plot[.!treated_plot], dlnl_plot[.!treated_plot])
+    bc_trt   = binmeans(wdiff_plot[treated_plot],   dlnl_plot[treated_plot])
+    n_ctrl   = sum(.!treated_plot)
+    n_trt    = sum(treated_plot)
+
+    ctrl_raw_color = "#9ECAE1"
+    trt_raw_color  = "#F4A3A8"
+    ctrl_color     = "#2166AC"
+    trt_color      = "#B2182B"
+    p_wdiff = plot(xlabel = "initial wage deviation  (ln wⱼ - mean)",
+        ylabel = "dlnlⱼ",
+        title = "Employment wage-slope (β₂ = $(round(slope_trt - slope_ctrl, digits = 1)))",
+        titlefontsize = 10,
+        legend = :topleft, dpi = 1000)
+    scatter!(p_wdiff, wdiff_plot[.!treated_plot], dlnl_plot[.!treated_plot],
+        label = "control firms (N = $(n_ctrl))",
+        color = ctrl_raw_color, seriescolor = ctrl_raw_color,
+        markercolor = ctrl_raw_color, markerstrokewidth = 0, markersize = 2)
+    scatter!(p_wdiff, wdiff_plot[treated_plot], dlnl_plot[treated_plot],
+        label = "treated firms (N = $(n_trt))",
+        color = trt_raw_color, seriescolor = trt_raw_color,
+        markercolor = trt_raw_color, markerstrokewidth = 0, markersize = 1)
+    plot!(p_wdiff, xgrid, pred(fit_ctrl), color = ctrl_color, seriescolor = ctrl_color,
+        linecolor = ctrl_color, lw = 2, linestyle = :dash,
+        label = "control slope γ = $(round(slope_ctrl, digits = 3))")
+    plot!(p_wdiff, xgrid, pred(fit_trt), color = trt_color, seriescolor = trt_color,
+        linecolor = trt_color, lw = 2, linestyle = :dash,
+        label = "treated slope γ+β₂ = $(round(slope_trt, digits = 3))")
+    savefig(p_wdiff, projPath * "/output/figures/labor_wdiff_slope.png")
+end
+
+
+
+scatter(vec(dMA), vec(log.(lⱼ)),
     marker_z = clamp.(plot_w_color, w_color_clims...),
     clims = w_color_clims,
     color = :RdBu,

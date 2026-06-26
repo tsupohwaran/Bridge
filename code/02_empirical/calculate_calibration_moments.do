@@ -76,7 +76,7 @@ gen byte in_w_reg = e(sample)
 
 gen byte in_common_reg = in_emp_reg==1 & in_w_reg==1
 
-reghdfe lnemp i1.BIG#i1.post c.demean_lnw0#i1.BIG#i1.post lnage if in_common_reg, a(id year c.demean_lnw0#year $control) cluster(town2#ind)
+reghdfe lnemp i1.BIG#i1.post c.demean_lnw0#i1.BIG#i1.post c.demean_lnw0#i1.post lnage if in_common_reg, a(id year  $control) cluster(town2#ind)
 scalar beta_labor_bigMA = _b[1.BIG#1.post]
 scalar beta_labor_bigMA_wdiff = _b[c.demean_lnw0#1.BIG#1.post]
 
@@ -85,6 +85,122 @@ scalar beta_wage_bigMA = _b[1.BIG#1.post]
 
 cap mkdir "$proj_path/output"
 cap mkdir "$output_table_path"
+cap mkdir "$proj_path/output/figures"
+
+* Real-data analogue of the Julia labor reallocation cloud.
+* x: ln(dMA); y: Delta ln employment; color: initial wage deviation.
+preserve
+    keep if in_common_reg == 1 & (year == 2010 | year == 2012)
+
+    bysort id: egen lnemp_2010 = max(cond(year == 2010, lnemp, .))
+    bysort id: egen lnemp_2012 = max(cond(year == 2012, lnemp, .))
+    bysort id: egen dma_plot = max(cond(year == 2010, dma, .))
+    bysort id: egen wdiff_plot = max(cond(year == 2010, demean_lnw0, .))
+
+    gen double dlnemp_plot = lnemp_2012 - lnemp_2010
+    gen double dlnemp_plot_clip = dlnemp_plot
+    replace dlnemp_plot_clip = 5 if dlnemp_plot_clip > 5 & !missing(dlnemp_plot_clip)
+
+    gen double ln_dMA_plot = ln(dma_plot) if dma_plot > 0
+    quietly count if !missing(ln_dMA_plot)
+    local n_positive_dma = r(N)
+
+    if `n_positive_dma' > 0 {
+        quietly summarize ln_dMA_plot, meanonly
+        replace ln_dMA_plot = r(min) - 0.1 if missing(ln_dMA_plot) & !missing(dma_plot)
+
+        keep if !missing(dlnemp_plot_clip, ln_dMA_plot, wdiff_plot)
+        bysort id: keep if _n == 1
+
+        quietly count
+        local n_plot = r(N)
+
+        if `n_plot' > 0 {
+            xtile wage_bin = wdiff_plot, nq(7)
+
+            twoway ///
+                (scatter dlnemp_plot_clip ln_dMA_plot if wage_bin == 1, ///
+                    mcolor("103 0 31") msymbol(O) msize(tiny) mlcolor(none)) ///
+                (scatter dlnemp_plot_clip ln_dMA_plot if wage_bin == 2, ///
+                    mcolor("178 24 43") msymbol(O) msize(tiny) mlcolor(none)) ///
+                (scatter dlnemp_plot_clip ln_dMA_plot if wage_bin == 3, ///
+                    mcolor("214 96 77") msymbol(O) msize(tiny) mlcolor(none)) ///
+                (scatter dlnemp_plot_clip ln_dMA_plot if wage_bin == 4, ///
+                    mcolor("150 150 150") msymbol(O) msize(tiny) mlcolor(none)) ///
+                (scatter dlnemp_plot_clip ln_dMA_plot if wage_bin == 5, ///
+                    mcolor("146 197 222") msymbol(O) msize(tiny) mlcolor(none)) ///
+                (scatter dlnemp_plot_clip ln_dMA_plot if wage_bin == 6, ///
+                    mcolor("67 147 195") msymbol(O) msize(tiny) mlcolor(none)) ///
+                (scatter dlnemp_plot_clip ln_dMA_plot if wage_bin == 7, ///
+                    mcolor("33 102 172") msymbol(O) msize(tiny) mlcolor(none)), ///
+                xtitle("ln(dMA)", size(medsmall)) ///
+                ytitle("Delta ln employment, 2012 - 2010", size(medsmall)) ///
+                title("Employment Change vs Market Access Change", size(medium)) ///
+                yline(0, lpattern(dash) lcolor(gs10)) ///
+                legend(title("ln w0 - mean", size(small)) ///
+                       order(1 "Q1 lowest" 2 "Q2" 3 "Q3" 4 "Q4 middle" ///
+                             5 "Q5" 6 "Q6" 7 "Q7 highest") ///
+                       position(3) ring(1) cols(1) size(small) region(lcolor(none))) ///
+                note("Nonpositive dMA values are placed just left of the positive ln(dMA) support.", size(vsmall)) ///
+                graphregion(fcolor(white) lcolor(white)) ///
+                plotregion(fcolor(white))
+
+            graph export "$proj_path/output/figures/labor_reallocation_realdata.png", ///
+                replace width(6000)
+        }
+    }
+restore
+
+preserve
+    keep if in_common_reg == 1 & (year == 2010 | year == 2012)
+
+    bysort id: egen lnemp_2010 = max(cond(year == 2010, lnemp, .))
+    bysort id: egen lnemp_2012 = max(cond(year == 2012, lnemp, .))
+    bysort id: egen wdiff_plot = max(cond(year == 2010, demean_lnw0, .))
+    bysort id: egen treated_plot = max(BIG)
+
+    gen dlnemp_plot = lnemp_2012 - lnemp_2010
+    keep if !missing(dlnemp_plot, wdiff_plot, treated_plot)
+    bysort id: keep if _n == 1
+
+    count if treated_plot == 0
+    local n_ctrl = r(N)
+    count if treated_plot == 1
+    local n_trt = r(N)
+
+    quietly regress dlnemp_plot c.wdiff_plot if treated_plot == 0
+    local slope_ctrl_num = _b[wdiff_plot]
+    local slope_ctrl = strtrim(string(`slope_ctrl_num', "%9.3f"))
+
+    quietly regress dlnemp_plot c.wdiff_plot if treated_plot == 1
+    local slope_trt_num = _b[wdiff_plot]
+    local slope_trt = strtrim(string(`slope_trt_num', "%9.3f"))
+    local slope_gap_num = `slope_trt_num' - `slope_ctrl_num'
+    local slope_gap = strtrim(string(`slope_gap_num', "%9.3f"))
+
+    twoway ///
+        (scatter dlnemp_plot wdiff_plot if treated_plot == 0, ///
+            mcolor(navy%40) msymbol(O) msize(vsmall) mlcolor(none)) ///
+        (scatter dlnemp_plot wdiff_plot if treated_plot == 1, ///
+            mcolor(maroon%40) msymbol(O) msize(vsmall) mlcolor(none)) ///
+        (lfit dlnemp_plot wdiff_plot if treated_plot == 0, ///
+            lcolor(navy) lpattern(dash) lwidth(medthick)) ///
+        (lfit dlnemp_plot wdiff_plot if treated_plot == 1, ///
+            lcolor(maroon) lpattern(dash) lwidth(medthick)), ///
+        xtitle("initial wage deviation (ln w0 - mean)") ///
+        ytitle("Delta ln employment, 2012 - 2010") ///
+        title("Employment wage-slope: treated vs control (gap = `slope_gap')") ///
+        legend(order(1 "control firms (N = `n_ctrl')" ///
+                     2 "treated firms (N = `n_trt')" ///
+                     3 "control slope = `slope_ctrl'" ///
+                     4 "treated slope = `slope_trt'") ///
+               position(11) ring(0) cols(1) region(lcolor(black))) ///
+        graphregion(fcolor(white) lcolor(white)) ///
+        plotregion(fcolor(white))
+
+    graph export "$proj_path/output/figures/labor_wdiff_slope_regression.png", ///
+        replace width(6000)
+restore
 
 preserve
     clear
