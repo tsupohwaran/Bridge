@@ -33,9 +33,24 @@ drop n index
 tostring group, replace
 replace id = group if id == ""
 
+* aggregate industry codes into 12 categories
+gen ind_agg = 1 if ind_code2 >= 13 & ind_code2 <= 16 // 食品饮料
+replace ind_agg = 2 if ind_code2 >= 17 & ind_code2 <= 19 // 纺织服装
+replace ind_agg = 3 if ind_code2 >= 20 & ind_code2 <= 21 // 木材家具
+replace ind_agg = 4 if ind_code2 >= 22 & ind_code2 <= 23 // 造纸印刷
+replace ind_agg = 5 if ind_code2 == 24 // 文教用品
+replace ind_agg = 6 if ind_code2 == 25 // 石油加工
+replace ind_agg = 7 if ind_code2 >= 26 & ind_code2 <= 30 // 化学医药
+replace ind_agg = 8 if ind_code2 == 31 // 非金属制品
+replace ind_agg = 9 if ind_code2 >= 32 & ind_code2 <= 34 // 金属制造
+replace ind_agg = 10 if ind_code2 >= 35 & ind_code2 <= 36 // 机械设备
+replace ind_agg = 11 if ind_code2 == 37 // 运输设备
+replace ind_agg = 12 if ind_code2 >= 39 & ind_code2 <= 41 // 电气设备
+replace ind_agg = 13 if ind_code2 >= 42 // 其他制造业
+
 * keep relevant variables for market accessibility calculation
 * keep id z longitude latitude
-keep id year longitude latitude wage_inital_2010 wage_inital_2011 employ ind_code2
+keep id year longitude latitude wage_inital_2010 wage_inital_2011 employ ind_code2 ind_agg
 
 * merge town info based on firm coordinates
 geoinpoly latitude longitude using "$geo_raw_path/shapefiles/town_coord.dta"
@@ -72,12 +87,12 @@ export excel "$geo_temp_path/firm_qingdao_model.xlsx", firstrow(variables) repla
 
 * prepare CTSD data for year 2007-2020
 use "$regression_temp_path/match_cied_ctsd_07_14.dta", clear
-merge m:1 sdid using "$ctsd_temp_path/ctsd_qingdao_07_20.dta", keep(2 3) nogen
+merge m:1 sdid using "$ctsd_processed_path/ctsd_qingdao_07_20.dta", keep(2 3) nogen
 drop if missing(export_bool, firm_type, ind_code2)
 gen index = 1 if !missing(group)
 
 * prepare CIED data for year 2007-2014
-append using "$cied_temp_path/cied_qingdao_07_14.dta"
+append using "$cied_processed_path/cied_qingdao_07_14.dta"
 bys group year: gen n = _N
 drop if (n == 2) & missing(index) // drop repeated observations
 drop n index
@@ -102,6 +117,22 @@ drop ID 省 市 treat geom
 
 sort id year
 drop 年份 - 企业名称 n
+
+* aggregate industry codes into 12 categories
+gen ind_agg = 1 if ind_code2 >= 13 & ind_code2 <= 16 // 食品饮料
+replace ind_agg = 2 if ind_code2 >= 17 & ind_code2 <= 19 // 纺织服装
+replace ind_agg = 3 if ind_code2 >= 20 & ind_code2 <= 21 // 木材家具
+replace ind_agg = 4 if ind_code2 >= 22 & ind_code2 <= 23 // 造纸印刷
+replace ind_agg = 5 if ind_code2 == 24 // 文教用品
+replace ind_agg = 6 if ind_code2 == 25 // 石油加工
+replace ind_agg = 7 if ind_code2 >= 26 & ind_code2 <= 30 // 化学医药
+replace ind_agg = 8 if ind_code2 == 31 // 非金属制品
+replace ind_agg = 9 if ind_code2 >= 32 & ind_code2 <= 34 // 金属制造
+replace ind_agg = 10 if ind_code2 >= 35 & ind_code2 <= 36 // 机械设备
+replace ind_agg = 11 if ind_code2 == 37 // 运输设备
+replace ind_agg = 12 if ind_code2 >= 39 & ind_code2 <= 41 // 电气设备
+replace ind_agg = 13 if ind_code2 >= 42 // 其他制造业
+
 save "$regression_temp_path/firm_qingdao_reg.dta", replace
 
 duplicates drop id, force

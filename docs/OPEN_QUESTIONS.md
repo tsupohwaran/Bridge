@@ -1,6 +1,6 @@
 # Open Questions
 
-Last updated: 2026-06-05.
+Last updated: 2026-06-28.
 
 These are points that could not be safely resolved from the current files.
 
@@ -12,9 +12,9 @@ These are points that could not be safely resolved from the current files.
 4. Which scripts and tables should be updated to synchronize the confirmed treatment definition with the model-side `bigMA = 1[dMA >= 0.5]` definition?
 5. Which sample is canonical: full unbalanced panel, strict balanced panel, firms observed at least 3/4/5 years, CTSD only, or CTSD + CIED?
 6. Which empirical scripts/tables should be updated to reproduce the confirmed `β_target` values used in the model?
-7. Should older nested-model draft material with parameter `σ` be archived as historical notes or mentioned as a discarded extension?
+7. How sensitive are the nested-logit estimates to using the three current moments to jointly identify `η`, `θ`, and `σ`?
 8. How should the paper reconcile the empirical markdown variable with the structural markdown `ν_j = 1 + 1/ε_j > 1` in notation and scale?
-9. Why does the current `data/model/processed/firm_qingdao_model.dta` lack `pop`, `dzj`, `dzj_prime`, and `wage_inital`, which `main.jl` expects?
+9. Should `data/model/processed/firm_qingdao_model_11.dta` be used for any validation or robustness exercise, or should the model remain anchored to the 2010 baseline file?
 10. Which scripts are active versus legacy: especially `03_prep_market_access_nosec.do`, `calibration.jl`, `model_output.jl`, and `code/sandbox/draft.do`?
 
 ## Resolved By User Correction
@@ -24,6 +24,8 @@ Verified:
 - `BigMA` should be interpreted as bridge-induced firm-level accessibility improvement, not as a simple Huangdao / Jiaozhou Bay location dummy.
 - DID estimates identify relative changes between more and less affected firms because SUTVA / general-equilibrium spillovers may affect the comparison group.
 - The model's intended mechanism is average weakening of labor-market power from traffic integration, with possible increased market power for high-wage / large firms receiving large accessibility improvements.
+- The final paper model should use the nested logit distribution in `manuscript/draft/Model.lyx`, with `s` denoting sector rather than street/town.
+- In the model code, `s(j)` is implemented with firm-level `ind_agg`, and `σ` is calibrated jointly with `η` and `θ` using the same three moments while `α` is fixed.
 
 ## Data Questions
 
@@ -45,6 +47,6 @@ Uncertain:
 ## Paper Questions
 
 Uncertain:
-- Which draft note should supply the model section: `Model.lyx`, `ModelBridge.lyx`, or `Labor reallocation (general setup).lyx`?
+- `Model.lyx` supplies the nested-logit distribution for the model section; remaining notation should define `s` as sector.
 - Should historical land-price analysis remain background/motivation, or is it outside the final paper?
 - What are the final JEL codes and keywords?

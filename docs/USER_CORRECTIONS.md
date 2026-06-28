@@ -1,6 +1,6 @@
 # User Corrections
 
-Last updated: 2026-06-05.
+Last updated: 2026-06-28.
 
 Use this file to record corrections from the project owner. When this file changes, update the other AI understanding documents accordingly.
 
@@ -10,7 +10,9 @@ Use this file to record corrections from the project owner. When this file chang
 - The worker utility function should include a firm-level non-pecuniary amenity. Current implementation uses additive firm shifter `a_j` in utility, normalizes `mean(a_j) = 0`, solves `a_j` from observed firm employment, and solves `z_j` from observed wages.
 - Model solver calls should explicitly pass `a_j` in `vars`; do not silently default missing amenities to zero.
 - In the final paper, call `a_j` firm amenity.
-- The final model should continue using the current one-level logit structure.
+- The final paper model should use the nested logit distribution from `manuscript/draft/Model.lyx`. This supersedes the earlier one-level-logit preference for the final paper text. In the final paper, the nest index `s` should denote a sector, not a street/town.
+- In the model code, use `ind_agg` as the firm sector nest `s(j)`.
+- For now, use the same three calibration moments to back out `η`, `θ`, and the nested-logit parameter `σ`, with `α` fixed.
 - In paper text, `z` should be interpreted strictly as a region, specifically street/town.
 - In the paper, call `ν_j = 1 + 1 / ε_j` markdown, with `ν_j > 1`.
 - The final `bigMA` threshold should be fixed at `0.5` minutes.
@@ -29,7 +31,7 @@ Use this file to record corrections from the project owner. When this file chang
 - Preferred data sources:
 - Preferred empirical specification: two-period DID moments in `ComputeModelMoments` using appended baseline/counterfactual firm data and absorbed `id`, `year`, and `c.w_diff#year` effects; empirical `post` should use `year >= 2011`.
 - Calibration targets: `β_target` comes from empirical results; local empirical scripts may be updated later.
-- Model version: current one-level logit.
+- Model version: nested logit over sector nests, following `manuscript/draft/Model.lyx`, with `s` denoting `ind_agg`. The current Julia calibration should estimate `η`, `θ`, and `σ` from the same three reduced-form moments while keeping `α` fixed.
 - Results to treat as current:
 - Files/scripts to treat as deprecated:
 - Terminology preferences: `a_j` = firm amenity; `z` = region/street/town; `ν_j` = markdown (`>1`).

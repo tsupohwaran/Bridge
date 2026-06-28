@@ -1,6 +1,6 @@
 # Code Map
 
-Last generated: 2026-05-07.
+Last updated: 2026-06-28.
 
 ## Verified Code Structure
 
@@ -140,9 +140,10 @@ Uncertain:
 
 Verified:
 - Orchestrates package loading, Stata scripts, and model execution.
-- Loads `data/model/processed/firm_qingdao_model.dta`.
+- Loads `data/model/processed/firm_qingdao_model_10.dta`.
 - Builds arrays for population `l`, observed employment `l_j_data`, travel times `d` and `d′`, and observed wage `w_j_data`.
-- Estimates `η` and `θ` by matching model moments to `β_target`.
+- Estimates `η`, `θ`, and `σ` by matching model moments to `β_target`, with `α` fixed.
+- Uses firm-level `ind_agg` as the nested-logit sector label `s(j)`.
 - Solves baseline and counterfactual equilibria.
 - Exports wages and model figures.
 
@@ -156,8 +157,8 @@ Uncertain:
 ### `functions.jl`
 
 Verified:
-- Defines `RunStata`, summary/check helpers, a generic convergence routine, `SolveModel`, `SolveZfromW`, `ComputeModelMoments`, and `ObjectiveFunction`.
-- Current `SolveModel` is a one-level worker-choice model over firms.
+- Defines `RunStata`, summary/check helpers, nested-logit worker choice, a generic convergence routine, `SolveModel`, `SolveZfromW`, `ComputeModelMoments`, and `ObjectiveFunction`.
+- Current `SolveModel` uses sector-nested worker choice when `firm_sector` is supplied and keeps the one-level logit as the `σ = 1` compatibility case.
 
 Inferred:
 - This file is the authoritative current structural solver.

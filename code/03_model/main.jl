@@ -81,7 +81,10 @@ moment_sample_label = restrict_to_reg_sample ? "matched regression sample" : "fu
 println("Model moment sample firms: ", sum(moment_firm_mask), "/", J,
     " in ", moment_sample_label);
 
-firm_ind = df[1:Z:end, :ind_code2];
+firm_sector_raw = df[1:Z:end, :ind_agg];
+any(ismissing, firm_sector_raw) && error("Model sample must contain nonmissing ind_agg for nested-logit sector nests.")
+firm_sector = Int.(firm_sector_raw);
+firm_ind = firm_sector;
 
 # `df` is a firm-by-origin-town commute matrix, so its `town` column is not the
 # firm-location town used by Stata's cluster(town2#ind).
@@ -95,7 +98,7 @@ town_ind_cluster = [ismissing(town) || ismissing(ind) ? missing : string(town, "
     for (town, ind) in zip(firm_town, firm_ind)];
 
 #==================================================#
-# Calibration: Back out η and θ from labor and wage moments with fixed α
+# Calibration: back out η, θ, and σ from labor and wage moments with fixed α
 #==================================================#
 
 moment_target_path = joinpath(projPath, "output", "tables", "calibration_moments.csv")
@@ -111,20 +114,20 @@ println()
 
 η_bounds = [0.1, 5.0]
 θ_bounds = [0.1, 10]
-α_fixed = 0.4
-# α_bounds = [0.1, 0.9]
+σ_bounds = [0.1, 1.0]
+α_fixed = 0.8
 employment_change = :log
 wage_center = :all
 
 # use grid search to find good starting points for the optimization
 η_grid = [0.5, 0.7, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0]
 θ_grid = [0.1, 0.5, 1.0, 5.0, 10.0]
-α_grid = [0.2, 0.4, 0.6, 0.8]
+σ_grid = [0.25, 0.5, 0.75, 1.0]
 grid_results = EvaluateCalibrationGrid(;
     l, d, d′, wⱼ_data, lⱼ_data, β_target, 
-    # α = α_fixed,
-    α_grid,
-    η_grid, θ_grid,
+    α = α_fixed,
+    firm_sector = firm_sector,
+    η_grid, θ_grid, σ_grid,
     inner_tol = 2e-5,
     inner_maxIter = 3000,
     continuation_steps = 5,
@@ -135,12 +138,12 @@ grid_results = EvaluateCalibrationGrid(;
     verbose = true
 )
 
-mkpath(projPath * "/output/tables")
-CSV.write(
-    joinpath(projPath, "output", "tables", "calibration_grid.csv"),
-    grid_results;
-    bom = true
-)
+    mkpath(projPath * "/output/tables")
+    CSV.write(
+        joinpath(projPath, "output", "tables", "calibration_grid.csv"),
+        grid_results;
+        bom = true
+    )
 
 grid_results = CSV.read(projPath * "/output/tables/calibration_grid.csv", DataFrame)
 top_grid = first(grid_results, min(4, nrow(grid_results)))
@@ -148,15 +151,17 @@ println("\nTop calibration grid points:")
 show(top_grid, allrows = true, allcols = true)
 println()
 
-calibration_starts = [[row.η, row.θ] for row in eachrow(top_grid)]
+calibration_starts = [[row.η, row.θ, row.σ] for row in eachrow(top_grid)]
 
 calibration = CalibrateEtaThetaAlpha(;
     l, d, d′, wⱼ_data, lⱼ_data, β_target,
     α = α_fixed,
+    σ = nothing,
+    firm_sector = firm_sector,
     aⱼ_init,
-    starts = [[4.0, 5.0]],
-    lower = [η_bounds[1], θ_bounds[1]],
-    upper = [η_bounds[2], θ_bounds[2]],
+    starts = calibration_starts,
+    lower = [η_bounds[1], θ_bounds[1], σ_bounds[1]],
+    upper = [η_bounds[2], θ_bounds[2], σ_bounds[2]],
     iterations = 250,
     x_abstol = 1e-4,
     f_reltol = 1e-8,
@@ -175,14 +180,18 @@ result = calibration.result
 println("\n" * "="^50)
 println("OPTIMIZATION RESULTS")
 println("="^50)
-η_est, θ_est, α_est = calibration.parameters
+η_est, θ_est, σ_est, α_est = calibration.parameters
 
 println("Final objective: ", calibration.objective)
 println("Converged: ", calibration.converged)
-println("Bounds: η ∈ ", η_bounds, ", θ ∈ ", θ_bounds, ", fixed α = ", α_est)
+println("Bounds: η ∈ ", η_bounds, ", θ ∈ ", θ_bounds,
+    ", σ ∈ ", σ_bounds, ", fixed α = ", α_est)
 
 # Verify final moments
-β_final = ComputeModelMoments([η_est, θ_est, α_est]; l, d, d′, wⱼ_data, lⱼ_data,
+β_final = ComputeModelMoments([η_est, θ_est, σ_est]; l, d, d′, wⱼ_data, lⱼ_data,
+    α = α_est,
+    σ = nothing,
+    firm_sector = firm_sector,
     aⱼ_init,
     inner_tol = 1e-5, inner_maxIter = 5000, inner_display = true,
     continuation_steps = 1, employment_change, wage_center,
@@ -193,23 +202,24 @@ println("\nTarget  β: ", β_target)
 println("Model   β (", moment_sample_label, "): ", β_final)
 println("Estimated η: ", η_est)
 println("Estimated θ: ", θ_est)
+println("Estimated σ: ", σ_est)
 println("Fixed α: ", α_est)
 
 #==================================================#
-# Simulation using calibrated η, θ, and α
+# Simulation using calibrated η, θ, σ, and α
 #==================================================#
 
-η, θ, α = [3.742411481046953, 4.950962175934991, 0.4]
+η, θ, σ, α = η_est, θ_est, σ_est, α_est
 
 # Solve firm amenities and productivity from observed employment and wages
-vars = (; wⱼ = wⱼ_data, lⱼ = lⱼ_data, l, d)
-params = (; η, θ, α)
+vars = (; wⱼ = wⱼ_data, lⱼ = lⱼ_data, l, d, firm_sector)
+params = (; η, θ, σ, α)
 primitives = SolveFirmPrimitivesFromData(vars, params; aⱼ_init, displaySummary = true, displayGap = true, amenity_damp = 0.7, amenity_tol = 1e-8);
 zⱼ, aⱼ = primitives.zⱼ, primitives.aⱼ;
 
 # Solve the model
-vars = (; l, d, zⱼ, aⱼ)
-params = (; η, θ, α)
+vars = (; l, d, zⱼ, aⱼ, firm_sector)
+params = (; η, θ, σ, α)
 
 # solve the model for baseline
 # Use observed wages as the warm start and avoid the power update here:
@@ -224,7 +234,7 @@ println("Corrleation between wⱼ and lⱼ:", cor(vec(wⱼ), vec(lⱼ)))
 # println("Correlation between wⱼ_solved and wⱼ_data: ", corr_wages) # should be very close to 1
 
 # solve the model for counterfactual
-vars′ = (; l, d = d′, zⱼ, aⱼ);
+vars′ = (; l, d = d′, zⱼ, aⱼ, firm_sector);
 wⱼ′, π_zj′, ε_zj′, lⱼ′, εⱼ′ = SolveModel(vars′, params; displayGap = true, damp = 0.98, tol = 1e-9, displaySummary = true, power = true, wⱼ_init = wⱼ, maxIter = 3000);
 
 

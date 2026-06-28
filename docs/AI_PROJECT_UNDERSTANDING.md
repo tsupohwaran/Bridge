@@ -1,6 +1,6 @@
 # AI Project Understanding
 
-Last updated: 2026-06-05.
+Last updated: 2026-06-28.
 
 This document is an AI-readable map of the project as understood from the current repository. It is not a substitute for the paper. Statements are explicitly classified as `Verified`, `Inferred`, or `Uncertain`.
 
@@ -75,10 +75,11 @@ Verified:
   - firm elasticity `ε_j` as a worker-share-weighted average;
   - firm wage condition `w_j = α z_j l_j^(α-1) ε_j / (1 + ε_j)`;
   - markdown/labor market power object `ν_j = 1 + 1 / ε_j`.
-- `main.jl` fixes `α = 0.4` and estimates or sets commuting/preference parameters `η` and `θ`.
+- `main.jl` fixes `α = 0.4` and estimates commuting/preference parameters `η`, `θ`, and nested-logit parameter `σ`.
 - `main.jl` uses `SolveFirmPrimitivesFromData` to back out firm amenity `a_j` from observed employment and firm productivity `z_j` from observed wages before solving counterfactuals.
 - The final paper should call `a_j` firm amenity, interpret `z` as a region/street/town, and call `ν_j = 1 + 1/ε_j` markdown with `ν_j > 1`.
-- The final model should continue using the current one-level logit structure.
+- The current Julia model implements the nested logit distribution from `manuscript/draft/Model.lyx`, with the nest index `s` interpreted as firm sector `ind_agg`.
+- The current one-level logit is retained as the `σ = 1` special case.
 - Current model-side `bigMA` is fixed as `1[dMA >= 0.5]`, where `dMA` is measured in minutes.
 
 Inferred:
@@ -89,9 +90,9 @@ Inferred:
 - The user wants the main mechanism to be that traffic integration weakens labor-market power on average, while high-wage / large firms with large accessibility gains may experience increased labor-market power / markdown.
 
 Uncertain:
-- Draft notes include a nested structure with parameter `σ`, but this is historical relative to the current one-level final model.
-- `main.jl` expects `pop`, `dzj`, `dzj_prime`, and `wage_inital`, but the current `data/model/processed/firm_qingdao_model.dta` on disk has only 9 variables and lacks these fields.
-- `β_target = [-0.092242, 0.0939565]` comes from empirical results, but local empirical code may not yet be updated to reproduce those values.
+- The nested sector structure allows the bridge shock to affect both sector choice probabilities and within-sector firm choice probabilities.
+- The active model input `data/model/processed/firm_qingdao_model_10.dta` contains `pop`, `dzj`, `dzj_prime`, `wage_inital`, and `ind_agg`.
+- Calibration targets come from empirical results written to `output/tables/calibration_moments.csv`, but local empirical code may still be updated if the preferred target estimates change.
 
 ## Current Repository State
 

@@ -119,11 +119,11 @@ This section describes the reduced-form specifications that discipline the empir
 \]
 Employment and wages are observed in the firm panel. The markdown outcome is constructed from the production-function estimation and is used as the empirical counterpart to the labor-market-power object in the model below.
 
-The treatment variable is built from the change in commuting times between residence locations and firms. Let \(d^0_{zj}\) denote the travel time from residence location \(z\) to firm \(j\) in the no-bridge network, and let \(d^1_{zj}\) denote the corresponding travel time in the network with the bridge/tunnel links. Let \(s_z\) be the normalized working-age population share of location \(z\), with \(\sum_z s_z=1\). Firm \(j\)'s market-access gain is
+The treatment variable is built from the change in commuting times between residence locations and firms. Let \(d^0_{zj}\) denote the travel time from residence location \(z\) to firm \(j\) in the no-bridge network, and let \(d^1_{zj}\) denote the corresponding travel time in the network with the bridge/tunnel links. Let \(\lambda_z\) be the normalized working-age population share of location \(z\), with \(\sum_z \lambda_z=1\). Firm \(j\)'s market-access gain is
 \begin{equation}
     \Delta MA_j
     =
-    \sum_z s_z\left(d^0_{zj}-d^1_{zj}\right).
+    \sum_z \lambda_z\left(d^0_{zj}-d^1_{zj}\right).
     \label{eq:empirical_dma}
 \end{equation}
 A positive value means that the cross-bay links reduce the population-weighted commuting time to the firm. The main treatment indicator is
@@ -228,7 +228,7 @@ Observations & 24,350 & 16,411 & 5,066 & 5,062 & 20,025 & 16,145 \\
 \FloatBarrier
 
 \section{Model Setup}
-This section presents the quantitative spatial model used to interpret the reduced-form evidence. The model has two sets of locations. Workers live in residence locations \(z\in\mathcal{Z}\), interpreted as streets or towns, and firms are indexed by \(j\in\mathcal{J}\). The mass of workers living in \(z\) is \(l_z\), normalized so that \(\sum_z l_z=1\). Commuting time from \(z\) to \(j\) is \(d_{zj}\). A firm is characterized by a wage \(w_j\), a productivity term \(A_j\), and a firm amenity \(a_j\). The amenity captures non-pecuniary firm attributes that affect worker choices but do not enter the production function directly.
+This section presents the quantitative spatial model used to interpret the reduced-form evidence. Workers live in residence locations \(z\in Z\), interpreted as streets or towns, and firms are indexed by \(j\in J\). Each firm belongs to a sector \(s(j)\in S\), and \(J_s\) denotes the set of firms in sector \(s\). The mass of workers living in \(z\) is \(l_z\), normalized so that \(\sum_z l_z=1\). Commuting time from \(z\) to \(j\) is \(d_{zj}\). A firm is characterized by a wage \(w_j\), a productivity term \(A_j\), and a firm amenity \(a_j\). The amenity captures non-pecuniary firm attributes that affect worker choices but do not enter the production function directly.
 
 \subsection{Worker Choice}
 Worker \(i\), living in location \(z\), obtains indirect utility from working at firm \(j\),
@@ -244,38 +244,85 @@ Worker \(i\), living in location \(z\), obtains indirect utility from working at
     \frac{1}{\theta}\xi_{ij},
     \label{eq:model_utility}
 \end{equation}
-where \(\eta>0\) governs the disutility of commuting time and \(\theta>0\) governs the sensitivity of worker choices to systematic utility. The idiosyncratic taste shock \(\xi_{ij}\) is independent and Type-I extreme value. The probability that a worker in \(z\) chooses firm \(j\) is therefore
+where \(\eta>0\) governs the disutility of commuting time and \(\theta>0\) governs the sensitivity of worker choices to systematic utility. The vector of idiosyncratic taste shocks follows a nested multivariate extreme-value distribution:
+\begin{equation}
+    F(\xi_{i1},\ldots,\xi_{iJ})
+    =
+    \exp\left\{
+    -\sum_{s\in S}
+    \left[
+    \sum_{k\in J_s}
+    \exp\left(-\frac{\xi_{ik}}{\sigma}\right)
+    \right]^\sigma
+    \right\},
+    \qquad 0<\sigma\leq 1.
+    \label{eq:model_nested_shocks}
+\end{equation}
+The nest index \(s\) denotes sector. This structure allows idiosyncratic preferences over firms in the same sector to be correlated, while \(\sigma=1\) collapses the model to the one-level logit case.
+
+Let
+\[
+    Q_{zj}=w_j\exp(a_j)d_{zj}^{-\eta}
+\]
+denote the systematic attractiveness of firm \(j\) to workers living in \(z\). The probability that a worker in \(z\) chooses sector \(s\) is
+\begin{equation}
+    \pi_{zs}
+    =
+    \frac{
+    \left[
+    \sum_{k\in J_s} Q_{zk}^{\theta/\sigma}
+    \right]^\sigma
+    }{
+    \sum_{r\in S}
+    \left[
+    \sum_{k\in J_r} Q_{zk}^{\theta/\sigma}
+    \right]^\sigma
+    }.
+    \label{eq:model_sector_probability}
+\end{equation}
+Conditional on choosing sector \(s\), the probability of choosing firm \(j\in J_s\) is
+\begin{equation}
+    \pi_{zj\mid s}
+    =
+    \frac{
+    Q_{zj}^{\theta/\sigma}
+    }{
+    \sum_{k\in J_s} Q_{zk}^{\theta/\sigma}
+    }.
+    \label{eq:model_within_sector_probability}
+\end{equation}
+The unconditional probability of choosing firm \(j\in J_{s(j)}\) is
 \begin{equation}
     \pi_{zj}
     =
-    \frac{
-    \exp\left\{\theta\left(\log w_j+a_j-\eta\log d_{zj}\right)\right\}
-    }{
-    \sum_{k\in\mathcal{J}}
-    \exp\left\{\theta\left(\log w_k+a_k-\eta\log d_{zk}\right)\right\}
-    }
-    =
-    \frac{\left(w_j\exp(a_j)d_{zj}^{-\eta}\right)^\theta}
-    {\sum_{k\in\mathcal{J}}\left(w_k\exp(a_k)d_{zk}^{-\eta}\right)^\theta}.
+    \pi_{z,s(j)}\pi_{zj\mid s(j)}.
     \label{eq:model_choice_probability}
 \end{equation}
 Firm \(j\)'s labor force is the sum of the workers choosing that firm across residence locations:
 \begin{equation}
     L_j
     =
-    \sum_{z\in\mathcal{Z}} l_z\pi_{zj}.
+    \sum_{z\in Z} l_z\pi_{zj}.
     \label{eq:model_labor}
 \end{equation}
 
-The firm-specific labor supply elasticity follows from the logit choice structure. For workers in residence location \(z\), the elasticity of the choice probability with respect to firm \(j\)'s own wage is
+The firm-specific labor supply elasticity follows from the nested logit choice structure. For workers in residence location \(z\), the elasticity of the choice probability with respect to firm \(j\)'s own wage is
 \begin{equation}
     \varepsilon_{zj}
     =
     \frac{\partial \log \pi_{zj}}{\partial \log w_j}
     =
-    \theta\left(1-\pi_{zj}\right).
+    \theta
+    \left[
+    \frac{1}{\sigma}
+    +
+    \left(1-\frac{1}{\sigma}\right)\pi_{zj\mid s(j)}
+    -
+    \pi_{zj}
+    \right].
     \label{eq:model_origin_elasticity}
 \end{equation}
+When \(\sigma=1\), equation \eqref{eq:model_origin_elasticity} becomes the one-level-logit expression \(\varepsilon_{zj}=\theta(1-\pi_{zj})\).
 Let
 \[
     \omega_{zj}
@@ -288,10 +335,10 @@ be the share of firm \(j\)'s workforce that comes from residence location \(z\).
     =
     \frac{\partial \log L_j}{\partial \log w_j}
     =
-    \sum_{z\in\mathcal{Z}}\omega_{zj}\varepsilon_{zj}.
+    \sum_{z\in Z}\omega_{zj}\varepsilon_{zj}.
     \label{eq:model_firm_elasticity}
 \end{equation}
-The bridge changes commuting times, and hence changes \(\pi_{zj}\), worker-origin composition \(\omega_{zj}\), and the labor supply elasticity \(\varepsilon_j\).
+The bridge changes commuting times, and hence changes sector choices \(\pi_{zs}\), within-sector firm choices \(\pi_{zj\mid s}\), unconditional firm choices \(\pi_{zj}\), worker-origin composition \(\omega_{zj}\), and the labor supply elasticity \(\varepsilon_j\).
 
 \subsection{Firms and Markdown}
 Firm \(j\) produces with decreasing returns to labor,
@@ -329,14 +376,14 @@ The model markdown is defined as the ratio between the marginal product of labor
 Thus, a firm with a lower labor supply elasticity has greater labor-market power and a higher markdown.
 
 \subsection{Equilibrium, Inversion, and Bridge Counterfactual}
-Given primitives \(\{l_z,d_{zj},A_j,a_j\}\) and parameters \((\alpha,\eta,\theta)\), an equilibrium is a vector of wages \(\{w_j\}_{j\in\mathcal{J}}\) such that worker choices satisfy equation \eqref{eq:model_choice_probability}, firm labor satisfies equation \eqref{eq:model_labor}, firm-level elasticities satisfy equation \eqref{eq:model_firm_elasticity}, and wages satisfy equation \eqref{eq:model_wage_foc}. Since only relative wages matter for worker choices, the numerical solution normalizes the aggregate wage bill.
+Given primitives \(\{l_z,d_{zj},A_j,a_j,s(j)\}\) and parameters \((\alpha,\eta,\theta,\sigma)\), an equilibrium is a vector of wages \(\{w_j\}_{j\in J}\) such that worker choices satisfy equations \eqref{eq:model_sector_probability}--\eqref{eq:model_choice_probability}, firm labor satisfies equation \eqref{eq:model_labor}, firm-level elasticities satisfy equation \eqref{eq:model_firm_elasticity}, and wages satisfy equation \eqref{eq:model_wage_foc}. Since only relative wages matter for worker choices, the numerical solution normalizes the aggregate wage bill.
 
-For a candidate value of \((\eta,\theta)\), the model maps the observed baseline economy into firm primitives in two steps. First, firm amenities are inverted from observed baseline employment and wages:
+For a candidate value of \((\eta,\theta,\sigma)\), the model maps the observed baseline economy into firm primitives in two steps. First, firm amenities are inverted from observed baseline employment and wages:
 \begin{equation}
     L_j^{data}
     =
     \sum_z l_z
-    \pi_{zj}\left(w^{data},d^0,a;\eta,\theta\right),
+    \pi_{zj}\left(w^{data},d^0,a;\eta,\theta,\sigma\right),
     \qquad
     \frac{1}{J}\sum_j a_j=0.
     \label{eq:model_amenity_inversion}
@@ -353,7 +400,7 @@ Second, firm productivity is backed out from the wage first-order condition:
     },
     \label{eq:model_productivity_inversion}
 \end{equation}
-where \(\kappa\) is a normalization constant. In the implementation, \(\alpha\) is fixed and \(\eta\) and \(\theta\) are calibrated to match the reduced-form moments described below.
+where \(\kappa\) is a normalization constant. In the quantitative exercise, \(\alpha\) is fixed and \(\eta\), \(\theta\), and \(\sigma\) are calibrated to match the reduced-form moments described below.
 
 The counterfactual compares two commuting networks. The baseline network uses no-bridge commuting times \(d^0_{zj}\). The post-opening network uses with-bridge commuting times \(d^1_{zj}\). Holding residence populations, firm amenities, and firm productivities fixed, we solve the model under \(d^0\) and \(d^1\). The model-implied changes in employment, wages, and markdowns are then
 \[
@@ -365,7 +412,7 @@ For the calibration moments, the model appends the no-bridge equilibrium and the
 
 \section{Calibration and Simulation}
 
-The calibration chooses the commuting-cost parameter \(\eta\) and the choice-sensitivity parameter \(\theta\) so that the model reproduces the reduced-form responses of employment and wages to the bridge-induced market-access shock. The production curvature \(\alpha\) is fixed. For each candidate pair \((\eta,\theta)\), the model first inverts the baseline firm amenities and firm productivities using equations \eqref{eq:model_amenity_inversion} and \eqref{eq:model_productivity_inversion}. Holding these primitives fixed, the model then solves the no-bridge equilibrium under \(d^0\) and the post-opening equilibrium under \(d^1\). The resulting firm-level changes in employment and wages are converted into a two-period model panel and projected onto the same treatment and wage-heterogeneity variables used in the reduced-form regressions.
+The calibration chooses the commuting-cost parameter \(\eta\), the choice-sensitivity parameter \(\theta\), and the sector-nest parameter \(\sigma\) so that the model reproduces the reduced-form responses of employment and wages to the bridge-induced market-access shock. The production curvature \(\alpha\) is fixed. For each candidate triple \((\eta,\theta,\sigma)\), the model first inverts the baseline firm amenities and firm productivities using equations \eqref{eq:model_amenity_inversion} and \eqref{eq:model_productivity_inversion}. Holding these primitives fixed, the model then solves the no-bridge equilibrium under \(d^0\) and the post-opening equilibrium under \(d^1\). The resulting firm-level changes in employment and wages are converted into a two-period model panel and projected onto the same treatment and wage-heterogeneity variables used in the reduced-form regressions.
 
 The target vector contains three reduced-form coefficients:
 \begin{equation}
@@ -380,31 +427,31 @@ The target vector contains three reduced-form coefficients:
 \end{equation}
 The first element, \(\widehat{\beta}^{RF}_{L,1}\), is the coefficient on \(BigMA_j\times Post_t\) in the employment regression. The second element, \(\widehat{\beta}^{RF}_{L,2}\), is the coefficient on \(\widetilde{w}_{j0}\times BigMA_j\times Post_t\) in the employment regression and captures whether the employment effect of the bridge differs between high- and low-wage firms. The third element, \(\widehat{\beta}^{RF}_{w,1}\), is the coefficient on \(BigMA_j\times Post_t\) in the wage regression. These three moments are computed from the reduced-form sample and then held fixed as calibration targets.
 
-For any candidate \((\eta,\theta)\), the model generates the corresponding moment vector
+For any candidate \((\eta,\theta,\sigma)\), the model generates the corresponding moment vector
 \begin{equation}
-    m^{M}(\eta,\theta)
+    m^{M}(\eta,\theta,\sigma)
     =
     \begin{pmatrix}
-        \beta^{M}_{L,1}(\eta,\theta) \\
-        \beta^{M}_{L,2}(\eta,\theta) \\
-        \beta^{M}_{w,1}(\eta,\theta)
+        \beta^{M}_{L,1}(\eta,\theta,\sigma) \\
+        \beta^{M}_{L,2}(\eta,\theta,\sigma) \\
+        \beta^{M}_{w,1}(\eta,\theta,\sigma)
     \end{pmatrix},
     \label{eq:calibration_model_vector}
 \end{equation}
-where \(\beta^{M}_{L,1}\) and \(\beta^{M}_{L,2}\) are obtained by applying the employment calibration regression to the model-generated two-period panel, and \(\beta^{M}_{w,1}\) is obtained by applying the wage calibration regression to model-generated wages. The estimates \((\widehat{\eta},\widehat{\theta})\) solve
+where \(\beta^{M}_{L,1}\) and \(\beta^{M}_{L,2}\) are obtained by applying the employment calibration regression to the model-generated two-period panel, and \(\beta^{M}_{w,1}\) is obtained by applying the wage calibration regression to model-generated wages. The estimates \((\widehat{\eta},\widehat{\theta},\widehat{\sigma})\) solve
 \begin{equation}
-    (\widehat{\eta},\widehat{\theta})
+    (\widehat{\eta},\widehat{\theta},\widehat{\sigma})
     =
-    \arg\min_{\eta,\theta}
+    \arg\min_{\eta,\theta,\sigma}
     \left[
-        m^{M}(\eta,\theta)-\widehat{m}^{RF}
+        m^{M}(\eta,\theta,\sigma)-\widehat{m}^{RF}
     \right]'
     W
     \left[
-        m^{M}(\eta,\theta)-\widehat{m}^{RF}
+        m^{M}(\eta,\theta,\sigma)-\widehat{m}^{RF}
     \right],
     \label{eq:calibration_objective}
 \end{equation}
-where the current implementation uses an identity weighting matrix \(W\) and searches over a compact admissible parameter space. The two employment moments discipline the magnitude and wage heterogeneity of labor reallocation induced by the commuting-cost shock. The wage moment adds information about the equilibrium wage response, which is shaped by both labor reallocation and changes in firms' labor supply elasticities. Since commuting-time changes enter worker choice primarily through the product \(\theta\eta\), the wage and elasticity channels are important for separating the commuting-cost parameter from the choice-sensitivity parameter.
+where the calibration uses an identity weighting matrix \(W\) and searches over a compact admissible parameter space. The two employment moments discipline the magnitude and wage heterogeneity of labor reallocation induced by the commuting-cost shock. The wage moment adds information about the equilibrium wage response, which is shaped by both labor reallocation and changes in firms' labor supply elasticities. Since commuting-time changes enter worker choice through the commuting-cost parameter, the overall choice sensitivity, and the sector-nest parameter, the wage and elasticity channels are important for separating the commuting-cost response from substitution across and within sectors.
 
 \end{document}

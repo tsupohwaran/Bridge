@@ -1,6 +1,6 @@
 # Data Map
 
-Last generated: 2026-05-07.
+Last updated: 2026-06-28.
 
 The repository's `data/` directory is ignored by git but exists locally. This map records what is currently on disk and what the scripts appear to expect.
 
@@ -27,14 +27,14 @@ Uncertain:
 ### Model sample
 
 Verified:
-- `data/model/processed/firm_qingdao_model.dta`
-  - Current shape: 9,838 rows, 9 variables.
-  - Variables currently present: `id`, `year`, `employ`, `longitude`, `latitude`, `wage_inital_2010`, `wage_inital_2011`, `county`, `town`.
-  - Years currently present: 2010 and 2011.
+- `data/model/processed/firm_qingdao_model_10.dta`
+  - Current shape: 701,696 rows, 13 variables.
+  - Variables currently present: `id`, `town`, `dzj`, `dzj_prime`, `pop`, `year`, `employ`, `ind_code2`, `longitude`, `latitude`, `wage_inital`, `ind_agg`, `county`.
+  - This is the active model input loaded by `code/03_model/main.jl`.
+  - It contains `ind_agg`, used as the sector nest `s(j)` in the nested-logit model code.
 
 Uncertain:
-- `main.jl` expects `pop`, `dzj`, `dzj_prime`, and `wage_inital`; these are not present in the current file.
-- The file may be an intermediate pre-commute-merge state rather than the intended final model input.
+- Whether `data/model/processed/firm_qingdao_model_11.dta` should also be used in a later model robustness or validation exercise.
 
 ### Regression sample
 

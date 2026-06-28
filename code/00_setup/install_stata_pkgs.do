@@ -8,3 +8,4 @@ ssc install ivreghdfe
 ssc install winsor2
 net install _gwtmean.pkg
 ssc install geoinpoly
+ssc install boottest

@@ -48,25 +48,82 @@ end
 # For convenience. This function is used to sum over the specified dimensions and drop them.
 sumsqueeze(A; dims) = dropdims(sum(A, dims=dims), dims=dims)
 
-function WorkerChoice(wⱼ, l, d, aⱼ, params::NamedTuple; log_d=nothing)
+function _namedtuple_get(nt::NamedTuple, key::Symbol, default)
+    return hasproperty(nt, key) ? getproperty(nt, key) : default
+end
+
+function _with_firm_sector(nt::NamedTuple, firm_sector)
+    return isnothing(firm_sector) ? nt : (; nt..., firm_sector)
+end
+
+function _firm_sector_indices(firm_sector, J)
+    isnothing(firm_sector) && return nothing
+    length(firm_sector) == J || error("firm_sector must have length $J")
+    any(ismissing, firm_sector) && error("firm_sector cannot contain missing values")
+
+    sector_vec = collect(firm_sector)
+    sectors = unique(sector_vec)
+    return [findall(==(sector), sector_vec) for sector in sectors]
+end
+
+function WorkerChoice(wⱼ, l, d, aⱼ, params::NamedTuple; log_d=nothing, firm_sector=nothing)
     (; η, θ) = params
+    σ = Float64(_namedtuple_get(params, :σ, 1.0))
+    firm_sector = isnothing(firm_sector) ? _namedtuple_get(params, :firm_sector, nothing) : firm_sector
     J = size(d, 2)
     length(wⱼ) == J || error("wⱼ must have length $J")
     length(aⱼ) == J || error("aⱼ must have length $J")
     any(ismissing, wⱼ) && error("wⱼ cannot contain missing values")
     any(ismissing, aⱼ) && error("aⱼ cannot contain missing values")
+    θ > 0 || error("θ must be positive")
+    σ > 0 || error("σ must be positive")
+    σ <= 1 || error("σ must be weakly below 1")
 
     wⱼ = wⱼ isa Vector{Float64} ? wⱼ : vec(Float64.(wⱼ))
     aⱼ = aⱼ isa Vector{Float64} ? aⱼ : vec(Float64.(aⱼ))
     log_d = isnothing(log_d) ? log.(d) : log_d
 
-    # Use log-sum-exp trick for numerical stability
-    log_xzj = θ .* (log.(wⱼ') .+ aⱼ' .- η .* log_d)  # Z × J matrix
-    log_xzj_max = maximum(log_xzj, dims=2)  # Z × 1
-    log_sum_exp = log_xzj_max .+ log.(sum(exp.(log_xzj .- log_xzj_max), dims=2))
-    π_zj = exp.(log_xzj .- log_sum_exp)
-    
-    ε_zj = θ .* (1 .- π_zj)
+    log_q_zj = log.(wⱼ') .+ aⱼ' .- η .* log_d  # Z × J matrix
+    sector_indices = _firm_sector_indices(firm_sector, J)
+
+    if isnothing(sector_indices)
+        isapprox(σ, 1.0; atol=1e-12) ||
+            error("firm_sector is required when σ differs from 1")
+
+        # Use log-sum-exp trick for numerical stability.
+        log_xzj = θ .* log_q_zj
+        log_xzj_max = maximum(log_xzj, dims=2)
+        log_sum_exp = log_xzj_max .+ log.(sum(exp.(log_xzj .- log_xzj_max), dims=2))
+        π_zj = exp.(log_xzj .- log_sum_exp)
+        ε_zj = θ .* (1 .- π_zj)
+    else
+        x_zj = (θ / σ) .* log_q_zj
+        Z = size(d, 1)
+        S = length(sector_indices)
+        log_inclusive_zs = Matrix{Float64}(undef, Z, S)
+        π_zj_given_s = similar(x_zj)
+
+        for (s_idx, idx) in enumerate(sector_indices)
+            x_zs = @view x_zj[:, idx]
+            x_max_zs = maximum(x_zs, dims=2)
+            log_sum_zs = x_max_zs .+ log.(sum(exp.(x_zs .- x_max_zs), dims=2))
+            log_inclusive_zs[:, s_idx] = vec(σ .* log_sum_zs)
+            π_zj_given_s[:, idx] = exp.(x_zs .- log_sum_zs)
+        end
+
+        inclusive_max = maximum(log_inclusive_zs, dims=2)
+        log_denom_z = inclusive_max .+
+            log.(sum(exp.(log_inclusive_zs .- inclusive_max), dims=2))
+        π_zs = exp.(log_inclusive_zs .- log_denom_z)
+
+        π_zj = similar(x_zj)
+        for (s_idx, idx) in enumerate(sector_indices)
+            π_zj[:, idx] = π_zj_given_s[:, idx] .* π_zs[:, s_idx:s_idx]
+        end
+
+        ε_zj = θ .* (1 / σ .+ (1 - 1 / σ) .* π_zj_given_s .- π_zj)
+    end
+
     lⱼ = sum(π_zj .* l, dims = 1)'
     εⱼ = sumsqueeze(π_zj .* l ./ lⱼ' .* ε_zj, dims = 1)
 
@@ -79,6 +136,7 @@ function SolveAmenitiesFromEmployment(vars::NamedTuple, params::NamedTuple;
 
     (; wⱼ, l, d, lⱼ) = vars
     (; θ) = params
+    firm_sector = _namedtuple_get(vars, :firm_sector, nothing)
     J = size(d, 2)
     θ > 0 || error("θ must be positive")
     length(lⱼ) == J || error("lⱼ must have length $J")
@@ -96,7 +154,7 @@ function SolveAmenitiesFromEmployment(vars::NamedTuple, params::NamedTuple;
     while (iter < maxIter) && (gap > tol)
         iter += 1
         aⱼ = logq ./ θ
-        choice = WorkerChoice(wⱼ, l, d, aⱼ, params; log_d)
+        choice = WorkerChoice(wⱼ, l, d, aⱼ, params; log_d=log_d, firm_sector=firm_sector)
         lⱼ_model = vec(choice.lⱼ)
         gap = maximum(abs.(lⱼ_model .- lⱼ_target))
         gap <= tol && break
@@ -114,7 +172,7 @@ function SolveAmenitiesFromEmployment(vars::NamedTuple, params::NamedTuple;
 
     aⱼ = logq ./ θ
     aⱼ .-= mean(aⱼ)
-    choice = WorkerChoice(wⱼ, l, d, aⱼ, params; log_d)
+    choice = WorkerChoice(wⱼ, l, d, aⱼ, params; log_d=log_d, firm_sector=firm_sector)
     gap = maximum(abs.(vec(choice.lⱼ) .- lⱼ_target))
     converged = gap <= tol
 
@@ -242,6 +300,7 @@ function SolveModel(vars::NamedTuple, params::NamedTuple;
     # unpack the data
     (; l, d, zⱼ, aⱼ) = vars
     (; η, θ, α) = params
+    firm_sector = _namedtuple_get(vars, :firm_sector, nothing)
 
     # initial guess (use warm start if provided)
     J_local = size(d, 2)
@@ -250,7 +309,7 @@ function SolveModel(vars::NamedTuple, params::NamedTuple;
 
     # update rule
     function UpdateRule(wⱼ)
-        choice = WorkerChoice(wⱼ, l, d, aⱼ, params; log_d)
+        choice = WorkerChoice(wⱼ, l, d, aⱼ, params; log_d=log_d, firm_sector=firm_sector)
         π_zj, ε_zj, lⱼ, εⱼ = choice.π_zj, choice.ε_zj, choice.lⱼ, choice.εⱼ
 
         wⱼ = α .* zⱼ .* lⱼ .^ (α - 1) .* εⱼ ./ (1 .+ εⱼ)
@@ -288,7 +347,9 @@ function SolveFirmPrimitivesFromData(vars::NamedTuple, params::NamedTuple;
     (; wⱼ, l, d, lⱼ) = vars
     (; α) = params
 
-    amenity = SolveAmenitiesFromEmployment((; wⱼ, l, d, lⱼ), params;
+    firm_sector = _namedtuple_get(vars, :firm_sector, nothing)
+    amenity_vars = _with_firm_sector((; wⱼ, l, d, lⱼ), firm_sector)
+    amenity = SolveAmenitiesFromEmployment(amenity_vars, params;
         aⱼ_init, tol=amenity_tol, maxIter=amenity_maxIter, damp=amenity_damp,
         displayGap, displaySummary, returnInfo=true)
 
@@ -319,8 +380,9 @@ function SolveZfromW(vars::NamedTuple, params::NamedTuple)
     # unpack the data
     (; wⱼ, l, d, aⱼ) = vars
     (; η, θ, α) = params
+    firm_sector = _namedtuple_get(vars, :firm_sector, nothing)
 
-    choice = WorkerChoice(wⱼ, l, d, aⱼ, params; log_d = log.(d))
+    choice = WorkerChoice(wⱼ, l, d, aⱼ, params; log_d = log.(d), firm_sector=firm_sector)
     lⱼ, εⱼ = choice.lⱼ, choice.εⱼ
 
     zⱼ = wⱼ .* (1 .+ εⱼ) ./ (α .* lⱼ .^ (α - 1) .* εⱼ)
@@ -477,44 +539,62 @@ function _invalid_moments()
     return [Inf, Inf, Inf]
 end
 
-function _unpack_calibration_params(params_to_estimate, α_fixed)
+function _unpack_calibration_params(params_to_estimate, α_fixed; σ_fixed=1.0)
     params = Float64.(vec(params_to_estimate))
-    if length(params) == 2
-        isnothing(α_fixed) && error("α must be supplied when params_to_estimate has length 2")
-        η, θ = params
-        α = Float64(α_fixed)
-    elseif length(params) == 3
-        η, θ, α = params
+    estimate_α = isnothing(α_fixed)
+    estimate_σ = isnothing(σ_fixed)
+    expected = 2 + Int(estimate_σ) + Int(estimate_α)
+    length(params) == expected || error(
+        "params_to_estimate must have length $expected " *
+        (estimate_σ && estimate_α ? "([η, θ, σ, α])" :
+         estimate_σ ? "([η, θ, σ])" :
+         estimate_α ? "([η, θ, α])" :
+         "([η, θ])")
+    )
+
+    η, θ = params[1], params[2]
+    idx = 3
+    if estimate_σ
+        σ = params[idx]
+        idx += 1
     else
-        error("params_to_estimate must have length 2 ([η, θ]) or length 3 ([η, θ, α])")
+        σ = Float64(σ_fixed)
     end
-    return η, θ, α
+
+    if estimate_α
+        α = params[idx]
+    else
+        α = Float64(α_fixed)
+    end
+    return η, θ, σ, α
 end
 
 # Compute model moments given parameters
 function ComputeModelMoments(params_to_estimate; l, d, d′, wⱼ_data, lⱼ_data, α=nothing,
+    σ=1.0, firm_sector=nothing,
     aⱼ_init=nothing, amenity_tol=1e-10, amenity_maxIter=5000, amenity_damp=0.5,
     inner_tol=1e-5, inner_maxIter=3000, inner_display=false, require_convergence=true,
     continuation_steps=5, employment_change=:log, wage_center=:treated,
     moment_firm_mask=nothing, firm_ids=nothing, reg_sample_ids=nothing,
     restrict_to_reg_sample::Bool=false, displayGap = false, damp_cf = nothing)
-    η, θ, α = _unpack_calibration_params(params_to_estimate, α)
+    η, θ, σ_est, α = _unpack_calibration_params(params_to_estimate, α; σ_fixed=σ)
     continuation_steps = max(1, Int(continuation_steps))
     
     # Ensure parameters are in valid range
-    if η <= 0 || θ <= 0 || α <= 0 || α >= 1 ||
-        !isfinite(η) || !isfinite(θ) || !isfinite(α)
+    if η <= 0 || θ <= 0 || σ_est <= 0 || σ_est > 1 || α <= 0 || α >= 1 ||
+        !isfinite(η) || !isfinite(θ) || !isfinite(σ_est) || !isfinite(α)
         return _invalid_moments()
     end
     
-    # Higher θ can make the counterfactual fixed point sharper, so use more damping.
-    damp_cf = isnothing(damp_cf) ? clamp(0.65 + 0.085 * θ, 0.75, 0.97) : damp_cf
+    # Higher θ/σ can make the counterfactual fixed point sharper, so use more damping.
+    damp_cf = isnothing(damp_cf) ? clamp(0.65 + 0.085 * θ / σ_est, 0.75, 0.98) : damp_cf
     
-    params = (; η, θ, α)
+    params = (; η, θ, σ = σ_est, α)
     
     # Step 2a: Invert for firm amenities and productivity using observed
     # employment and wage in the baseline data.
-    primitives = SolveFirmPrimitivesFromData((; wⱼ = wⱼ_data, lⱼ = lⱼ_data, l, d), params;
+    primitive_vars = _with_firm_sector((; wⱼ = wⱼ_data, lⱼ = lⱼ_data, l, d), firm_sector)
+    primitives = SolveFirmPrimitivesFromData(primitive_vars, params;
         aⱼ_init, amenity_tol, amenity_maxIter, amenity_damp,
         displaySummary=inner_display, displayGap = displayGap, returnInfo=true)
     zⱼ, aⱼ = primitives.zⱼ, primitives.aⱼ
@@ -548,7 +628,7 @@ function ComputeModelMoments(params_to_estimate; l, d, d′, wⱼ_data, lⱼ_dat
     for step in 1:continuation_steps
         path_share = step / continuation_steps
         d_path = exp.((1 - path_share) .* log_d .+ path_share .* log_d′)
-        vars_cf = (; l, d = d_path, zⱼ, aⱼ)
+        vars_cf = _with_firm_sector((; l, d = d_path, zⱼ, aⱼ), firm_sector)
         if inner_display && continuation_steps > 1
             println("Counterfactual continuation step ", step, "/", continuation_steps)
         end
@@ -588,17 +668,18 @@ function ComputeModelMoments(params_to_estimate; l, d, d′, wⱼ_data, lⱼ_dat
 end
 
 function ComputeModelMomentsFixedPrimitives(params_to_estimate; l, d, d′, wⱼ_data,
-    lⱼ_data, fixed_primitives, α=nothing, inner_tol=1e-5, inner_maxIter=3000,
+    lⱼ_data, fixed_primitives, α=nothing, σ=1.0, firm_sector=nothing,
+    inner_tol=1e-5, inner_maxIter=3000,
     inner_display=false, require_convergence=true, continuation_steps=5,
     employment_change=:log, wage_center=:treated, moment_firm_mask=nothing,
     firm_ids=nothing, reg_sample_ids=nothing, restrict_to_reg_sample::Bool=false,
     displayGap=false, damp_base=nothing, damp_cf=nothing)
 
-    η, θ, α = _unpack_calibration_params(params_to_estimate, α)
+    η, θ, σ_est, α = _unpack_calibration_params(params_to_estimate, α; σ_fixed=σ)
     continuation_steps = max(1, Int(continuation_steps))
 
-    if η <= 0 || θ <= 0 || α <= 0 || α >= 1 ||
-        !isfinite(η) || !isfinite(θ) || !isfinite(α)
+    if η <= 0 || θ <= 0 || σ_est <= 0 || σ_est > 1 || α <= 0 || α >= 1 ||
+        !isfinite(η) || !isfinite(θ) || !isfinite(σ_est) || !isfinite(α)
         return _invalid_moments()
     end
 
@@ -618,12 +699,13 @@ function ComputeModelMomentsFixedPrimitives(params_to_estimate; l, d, d′, wⱼ
         return _invalid_moments()
     end
 
-    params = (; η, θ, α)
-    damp_default = clamp(0.65 + 0.085 * θ, 0.75, 0.97)
+    params = (; η, θ, σ = σ_est, α)
+    damp_default = clamp(0.65 + 0.085 * θ / σ_est, 0.75, 0.98)
     damp_base = isnothing(damp_base) ? damp_default : damp_base
     damp_cf = isnothing(damp_cf) ? damp_default : damp_cf
 
-    base = SolveModel((; l, d, zⱼ, aⱼ), params;
+    base_vars = _with_firm_sector((; l, d, zⱼ, aⱼ), firm_sector)
+    base = SolveModel(base_vars, params;
         damp=damp_base, tol=inner_tol, power=false, maxIter=inner_maxIter,
         wⱼ_init=wⱼ_data, displaySummary=inner_display, displayGap=displayGap,
         returnInfo=true)
@@ -641,7 +723,7 @@ function ComputeModelMomentsFixedPrimitives(params_to_estimate; l, d, d′, wⱼ
     for step in 1:continuation_steps
         path_share = step / continuation_steps
         d_path = exp.((1 - path_share) .* log_d .+ path_share .* log_d′)
-        vars_cf = (; l, d = d_path, zⱼ, aⱼ)
+        vars_cf = _with_firm_sector((; l, d = d_path, zⱼ, aⱼ), firm_sector)
         if inner_display && continuation_steps > 1
             println("Counterfactual continuation step ", step, "/", continuation_steps)
         end
@@ -676,22 +758,24 @@ function ComputeModelMomentsFixedPrimitives(params_to_estimate; l, d, d′, wⱼ
 end
 
 # Objective function for estimation
-function ObjectiveFunction(params_to_estimate; l, d, d′, wⱼ_data, lⱼ_data, β_target, α=nothing,
+function ObjectiveFunction(params_to_estimate; l, d, d′, wⱼ_data, lⱼ_data, β_target,
+    α=nothing, σ=1.0, firm_sector=nothing,
     aⱼ_init=nothing, amenity_tol=1e-10, amenity_maxIter=5000, amenity_damp=0.5,
     verbose=false, inner_tol=1e-5, inner_maxIter=3000, inner_display=false,
     require_convergence=true, continuation_steps=5, employment_change=:log,
     wage_center=:treated, max_abs_moment=10.0, moment_firm_mask=nothing,
     firm_ids=nothing, reg_sample_ids=nothing, restrict_to_reg_sample::Bool=false)
     length(β_target) == 3 || error("β_target must have length 3")
-    η, θ, α_est = _unpack_calibration_params(params_to_estimate, α)
+    η, θ, σ_est, α_est = _unpack_calibration_params(params_to_estimate, α; σ_fixed=σ)
     
     # Return large penalty for invalid parameters
-    if η <= 0 || θ <= 0 || α_est <= 0 || α_est >= 1 ||
-        !isfinite(η) || !isfinite(θ) || !isfinite(α_est)
+    if η <= 0 || θ <= 0 || σ_est <= 0 || σ_est > 1 || α_est <= 0 || α_est >= 1 ||
+        !isfinite(η) || !isfinite(θ) || !isfinite(σ_est) || !isfinite(α_est)
         return 1e10
     end
     
-    β_model = ComputeModelMoments(params_to_estimate; l, d, d′, wⱼ_data, lⱼ_data, α,
+    β_model = ComputeModelMoments(params_to_estimate; l, d, d′, wⱼ_data, lⱼ_data,
+        α=α, σ=σ, firm_sector=firm_sector,
         aⱼ_init=aⱼ_init, amenity_tol=amenity_tol, amenity_maxIter=amenity_maxIter,
         amenity_damp=amenity_damp, inner_tol=inner_tol, inner_maxIter=inner_maxIter,
         inner_display=inner_display,
@@ -710,14 +794,15 @@ function ObjectiveFunction(params_to_estimate; l, d, d′, wⱼ_data, lⱼ_data,
     obj = sum(diff .^ 2)
     
     if verbose
-        println("η=$η, θ=$θ, α=$α_est → β_model=$β_model, obj=$obj")
+        println("η=$η, θ=$θ, σ=$σ_est, α=$α_est → β_model=$β_model, obj=$obj")
     end
     
     return obj
 end
 
 function EvaluateCalibrationGrid(; l, d, d′, wⱼ_data, lⱼ_data, β_target, α=nothing,
-    η_grid, θ_grid, α_grid=nothing, inner_tol=2e-5, inner_maxIter=3000,
+    σ=1.0, firm_sector=nothing,
+    η_grid, θ_grid, σ_grid=nothing, α_grid=nothing, inner_tol=2e-5, inner_maxIter=3000,
     aⱼ_init=nothing, amenity_tol=1e-10, amenity_maxIter=5000, amenity_damp=0.5,
     continuation_steps=5, employment_change=:log, wage_center=:treated,
     max_abs_moment=10.0, verbose=true, moment_firm_mask=nothing,
@@ -731,12 +816,16 @@ function EvaluateCalibrationGrid(; l, d, d′, wⱼ_data, lⱼ_data, β_target, 
     else
         α_values = Float64.(α_grid)
     end
+    estimate_σ = !isnothing(σ_grid)
+    σ_values = estimate_σ ? Float64.(σ_grid) : [Float64(σ)]
+    σ_fixed = estimate_σ ? nothing : Float64(σ)
 
-    grid_points = [(Float64(η), Float64(θ), Float64(α_value))
-        for η in η_grid for θ in θ_grid for α_value in α_values]
+    grid_points = [(Float64(η), Float64(θ), Float64(σ_value), Float64(α_value))
+        for η in η_grid for θ in θ_grid for σ_value in σ_values for α_value in α_values]
     total = length(grid_points)
     η_col = Vector{Float64}(undef, total)
     θ_col = Vector{Float64}(undef, total)
+    σ_col = Vector{Float64}(undef, total)
     α_col = Vector{Float64}(undef, total)
     β_labor_bigMA_col = Vector{Float64}(undef, total)
     β_labor_bigMA_wdiff_col = Vector{Float64}(undef, total)
@@ -751,9 +840,17 @@ function EvaluateCalibrationGrid(; l, d, d′, wⱼ_data, lⱼ_data, β_target, 
     end
 
     Threads.@threads :dynamic for idx in eachindex(grid_points)
-        η, θ, α_value = grid_points[idx]
+        η, θ, σ_value, α_value = grid_points[idx]
+        α_arg = isnothing(α_grid) ? Float64(α_value) : nothing
+        params_vec = if estimate_σ
+            isnothing(α_grid) ? [η, θ, σ_value] : [η, θ, σ_value, α_value]
+        else
+            isnothing(α_grid) ? [η, θ] : [η, θ, α_value]
+        end
+
         if isnothing(fixed_primitives)
-            β_model = ComputeModelMoments([η, θ, α_value]; l, d, d′, wⱼ_data, lⱼ_data,
+            β_model = ComputeModelMoments(params_vec; l, d, d′, wⱼ_data, lⱼ_data,
+                α=α_arg, σ=σ_fixed, firm_sector=firm_sector,
                 inner_tol=inner_tol, inner_maxIter=inner_maxIter,
                 inner_display=false, require_convergence=true,
                 aⱼ_init=aⱼ_init, amenity_tol=amenity_tol,
@@ -764,8 +861,9 @@ function EvaluateCalibrationGrid(; l, d, d′, wⱼ_data, lⱼ_data, β_target, 
                 reg_sample_ids=reg_sample_ids,
                 restrict_to_reg_sample=restrict_to_reg_sample)
         else
-            β_model = ComputeModelMomentsFixedPrimitives([η, θ, α_value];
+            β_model = ComputeModelMomentsFixedPrimitives(params_vec;
                 l, d, d′, wⱼ_data, lⱼ_data, fixed_primitives,
+                α=α_arg, σ=σ_fixed, firm_sector=firm_sector,
                 inner_tol=inner_tol, inner_maxIter=inner_maxIter,
                 inner_display=false, require_convergence=true,
                 continuation_steps=continuation_steps,
@@ -783,6 +881,7 @@ function EvaluateCalibrationGrid(; l, d, d′, wⱼ_data, lⱼ_data, β_target, 
 
         η_col[idx] = η
         θ_col[idx] = θ
+        σ_col[idx] = σ_value
         α_col[idx] = α_value
         β_labor_bigMA_col[idx] = β_model[1]
         β_labor_bigMA_wdiff_col[idx] = β_model[2]
@@ -795,7 +894,8 @@ function EvaluateCalibrationGrid(; l, d, d′, wⱼ_data, lⱼ_data, β_target, 
                 progress[] += 1
                 println("Grid ", progress[], "/", total,
                     " (thread ", Threads.threadid(), "): η=", η, ", θ=", θ,
-                    ", α=", α_value, " → β_model=", β_model, ", obj=", obj)
+                    ", σ=", σ_value, ", α=", α_value,
+                    " → β_model=", β_model, ", obj=", obj)
             finally
                 unlock(progress_lock)
             end
@@ -805,6 +905,7 @@ function EvaluateCalibrationGrid(; l, d, d′, wⱼ_data, lⱼ_data, β_target, 
     results = DataFrame(
         η = η_col,
         θ = θ_col,
+        σ = σ_col,
         α = α_col,
         β_labor_bigMA = β_labor_bigMA_col,
         β_labor_bigMA_wdiff = β_labor_bigMA_wdiff_col,
@@ -825,6 +926,7 @@ function _unconstrained_to_box(y, lower, upper)
 end
 
 function CalibrateEtaThetaAlpha(; l, d, d′, wⱼ_data, lⱼ_data, β_target, α=nothing,
+    σ=1.0, firm_sector=nothing,
     x0=[0.5, 50.0, 0.4], starts=nothing, lower=[0.1, 1.0, 0.1],
     upper=[1.0, 100.0, 0.9], iterations=250, x_abstol=1e-4, f_reltol=1e-8,
     aⱼ_init=nothing, amenity_tol=1e-10, amenity_maxIter=5000, amenity_damp=0.5,
@@ -835,18 +937,23 @@ function CalibrateEtaThetaAlpha(; l, d, d′, wⱼ_data, lⱼ_data, β_target, �
 
     length(β_target) == 3 || error("β_target must have length 3")
     estimate_alpha = isnothing(α)
+    estimate_sigma = isnothing(σ)
     α_fixed = estimate_alpha ? nothing : Float64(α)
+    σ_fixed = estimate_sigma ? nothing : Float64(σ)
     if !estimate_alpha && (α_fixed <= 0 || α_fixed >= 1 || !isfinite(α_fixed))
         error("fixed α must be finite and lie between 0 and 1")
     end
+    if !estimate_sigma && (σ_fixed <= 0 || σ_fixed > 1 || !isfinite(σ_fixed))
+        error("fixed σ must be finite and lie in (0, 1]")
+    end
 
-    n_estimated = estimate_alpha ? 3 : 2
+    n_estimated = 2 + Int(estimate_sigma) + Int(estimate_alpha)
     lower = Float64.(lower)
     upper = Float64.(upper)
-    if !estimate_alpha && length(lower) == 3
+    if !estimate_alpha && !estimate_sigma && length(lower) == 3
         lower = lower[1:2]
     end
-    if !estimate_alpha && length(upper) == 3
+    if !estimate_alpha && !estimate_sigma && length(upper) == 3
         upper = upper[1:2]
     end
     length(lower) == n_estimated ||
@@ -858,19 +965,31 @@ function CalibrateEtaThetaAlpha(; l, d, d′, wⱼ_data, lⱼ_data, β_target, �
         start_vec = Float64.(vec(start))
         if length(start_vec) == n_estimated
             return start_vec
-        elseif !estimate_alpha && length(start_vec) == 3
+        elseif !estimate_alpha && !estimate_sigma && length(start_vec) == 3
             return start_vec[1:2]
         else
             error("$label must have length $n_estimated" *
-                  (estimate_alpha ? "" : " ([η, θ]) or length 3 ([η, θ, α])"))
+                  (estimate_sigma && estimate_alpha ? " ([η, θ, σ, α])" :
+                   estimate_sigma ? " ([η, θ, σ])" :
+                   estimate_alpha ? " ([η, θ, α])" :
+                   " ([η, θ]) or length 3 ([η, θ, α])"))
         end
     end
 
-    full_parameters(x) = estimate_alpha ? x : [x[1], x[2], α_fixed]
+    function full_parameters(x)
+        η = x[1]
+        θ = x[2]
+        idx = 3
+        σ_value = estimate_sigma ? x[idx] : σ_fixed
+        idx += Int(estimate_sigma)
+        α_value = estimate_alpha ? x[idx] : α_fixed
+        return [η, θ, σ_value, α_value]
+    end
 
     function objective_y(y)
         x = _unconstrained_to_box(y, lower, upper)
-        return ObjectiveFunction(x; l, d, d′, wⱼ_data, lⱼ_data, β_target, α=α_fixed,
+        return ObjectiveFunction(x; l, d, d′, wⱼ_data, lⱼ_data, β_target,
+            α=α_fixed, σ=σ_fixed, firm_sector=firm_sector,
             aⱼ_init=aⱼ_init, amenity_tol=amenity_tol, amenity_maxIter=amenity_maxIter,
             amenity_damp=amenity_damp, verbose=verbose, inner_tol=inner_tol,
             inner_maxIter=inner_maxIter, inner_display=false, require_convergence=true,
@@ -934,12 +1053,14 @@ function CalibrateEtaThetaAlpha(; l, d, d′, wⱼ_data, lⱼ_data, β_target, �
         runs,
         estimated_parameters = best_run.estimated_parameters,
         fixed_alpha = α_fixed,
+        fixed_sigma = σ_fixed,
         lower,
         upper
     )
 end
 
 function CalibrateEtaTheta(; l, d, d′, wⱼ_data, lⱼ_data, α, β_target,
+    σ=1.0, firm_sector=nothing,
     x0=[2.75, 2.0], starts=nothing, lower=[0.25, 0.25], upper=[8.0, 8.0],
     iterations=250, x_abstol=1e-4, f_reltol=1e-8,
     aⱼ_init=nothing, amenity_tol=1e-10, amenity_maxIter=5000, amenity_damp=0.5,
@@ -953,7 +1074,8 @@ function CalibrateEtaTheta(; l, d, d′, wⱼ_data, lⱼ_data, α, β_target,
 
     function objective_y(y)
         x = _unconstrained_to_box(y, lower, upper)
-        return ObjectiveFunction(x; l, d, d′, wⱼ_data, lⱼ_data, α, β_target,
+        return ObjectiveFunction(x; l, d, d′, wⱼ_data, lⱼ_data, β_target,
+            α=α, σ=σ, firm_sector=firm_sector,
             aⱼ_init=aⱼ_init, amenity_tol=amenity_tol, amenity_maxIter=amenity_maxIter,
             amenity_damp=amenity_damp, verbose=verbose, inner_tol=inner_tol, inner_maxIter=inner_maxIter,
             inner_display=false, require_convergence=true,

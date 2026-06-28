@@ -19,6 +19,7 @@ merge m:1 id using "$regression_temp_path/id_exp.dta", keepusing(export_bool lne
 
 encode firm_type,gen(ftype)
 encode town, gen(town2)
+egen firm_id = group(id)
 gen lnage = ln(age)
 drop if dma==.
 gen w_ns=wage_total/empl
@@ -46,7 +47,17 @@ bysort id: egen Nw=total(nw)
 
 global year_choice="2010 2011 2012"
 global ref_year = 2009
-global control = "i.export_bool#year c.lnexp_intensity#year  ftype#year ind_code2#year"
+global control = "i.export_bool#year c.lnexp_intensity#year ftype#year ind_agg#year"
+local moment_cluster "town2 ind_agg"
+local wild_reps 9999
+local wild_seed 20260628
+
+cap which boottest
+local has_boottest = (_rc == 0)
+if !`has_boottest' {
+    di as error "boottest is not installed; wild-cluster bootstrap p-values will be missing."
+    di as error "Install it with: ssc install boottest"
+}
 
 gen post=(year>=2011)
 
@@ -67,21 +78,43 @@ gen lndma_demean =lndma - r(mean)  //demean: lndma
 *******
 *moment
 *******
-
-reghdfe lnemp i1.BIG#i1.post c.demean_lnw0#i1.BIG#i1.post lnage if (year==2010 | year==2012), a(id year c.demean_lnw0#year $control) cluster(town2#ind)
+eststo clear
+eststo: reghdfe lnemp i1.BIG#i1.post c.demean_lnw0#i1.BIG#i1.post lnage if (year==2010 | year==2012), a(id year c.demean_lnw0#year $control) cluster(`moment_cluster')
 gen byte in_emp_reg = e(sample)
 
-reghdfe lnw i1.BIG#i1.post lnage if (year==2010 | year==2012), a(id year c.demean_lnw0#year $control) cluster(town2#ind)
+reghdfe lnw i1.BIG#i1.post lnage if (year==2010 | year==2012), a(id year c.demean_lnw0#year $control) cluster(`moment_cluster')
 gen byte in_w_reg = e(sample)
 
 gen byte in_common_reg = in_emp_reg==1 & in_w_reg==1
 
-reghdfe lnemp i1.BIG#i1.post c.demean_lnw0#i1.BIG#i1.post c.demean_lnw0#i1.post lnage if in_common_reg, a(id year  $control) cluster(town2#ind)
+reghdfe lnemp i1.BIG#i1.post c.demean_lnw0#i1.BIG#i1.post c.demean_lnw0#i1.post lnage if in_common_reg, a(id year  $control) cluster(`moment_cluster')
 scalar beta_labor_bigMA = _b[1.BIG#1.post]
 scalar beta_labor_bigMA_wdiff = _b[c.demean_lnw0#1.BIG#1.post]
+tempvar labor_moment_sample
+gen byte `labor_moment_sample' = e(sample)
+scalar p_wild_labor_bigMA = .
+scalar p_wild_labor_bigMA_wdiff = .
+if `has_boottest' {
+    quietly regress lnemp i1.BIG#i1.post c.demean_lnw0#i1.BIG#i1.post ///
+        c.demean_lnw0#i1.post lnage i.firm_id i.year $control ///
+        if `labor_moment_sample'
+    boottest 1.BIG#1.post, cluster(`moment_cluster') reps(`wild_reps') seed(`wild_seed') nograph
+    scalar p_wild_labor_bigMA = r(p)
+    boottest c.demean_lnw0#1.BIG#1.post, cluster(`moment_cluster') reps(`wild_reps') seed(`wild_seed') nograph
+    scalar p_wild_labor_bigMA_wdiff = r(p)
+}
 
-reghdfe lnw i1.BIG#i1.post lnage if in_common_reg, a(id year c.demean_lnw0#year $control) cluster(town2#ind)
+reghdfe lnw i1.BIG#i1.post lnage if in_common_reg, a(id year c.demean_lnw0#year $control) cluster(`moment_cluster')
 scalar beta_wage_bigMA = _b[1.BIG#1.post]
+tempvar wage_moment_sample
+gen byte `wage_moment_sample' = e(sample)
+scalar p_wild_wage_bigMA = .
+if `has_boottest' {
+    quietly regress lnw i1.BIG#i1.post lnage i.firm_id i.year ///
+        c.demean_lnw0#i.year $control if `wage_moment_sample'
+    boottest 1.BIG#1.post, cluster(`moment_cluster') reps(`wild_reps') seed(`wild_seed') nograph
+    scalar p_wild_wage_bigMA = r(p)
+}
 
 cap mkdir "$proj_path/output"
 cap mkdir "$output_table_path"
@@ -207,12 +240,16 @@ preserve
     set obs 3
     gen str24 moment = ""
     gen double beta = .
+    gen double p_wild = .
     replace moment = "labor_bigMA" in 1
     replace beta = scalar(beta_labor_bigMA) in 1
+    replace p_wild = scalar(p_wild_labor_bigMA) in 1
     replace moment = "labor_bigMA_wdiff" in 2
     replace beta = scalar(beta_labor_bigMA_wdiff) in 2
+    replace p_wild = scalar(p_wild_labor_bigMA_wdiff) in 2
     replace moment = "wage_bigMA" in 3
     replace beta = scalar(beta_wage_bigMA) in 3
+    replace p_wild = scalar(p_wild_wage_bigMA) in 3
     export delimited using "$output_table_path/calibration_moments.csv", replace
 restore
 
