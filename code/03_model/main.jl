@@ -120,8 +120,8 @@ employment_change = :log
 wage_center = :all
 
 # use grid search to find good starting points for the optimization
-η_grid = [0.5, 0.7, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0]
-θ_grid = [0.1, 0.5, 1.0, 5.0, 10.0]
+η_grid = [0.1, 0.3, 0.5, 0.7, 0.9]
+θ_grid = [0.5, 1.0, 3.0, 5.0, 7.0, 10.0]
 σ_grid = [0.25, 0.5, 0.75, 1.0]
 grid_results = EvaluateCalibrationGrid(;
     l, d, d′, wⱼ_data, lⱼ_data, β_target, 

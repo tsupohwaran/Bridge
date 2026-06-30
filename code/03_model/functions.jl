@@ -66,7 +66,23 @@ function _firm_sector_indices(firm_sector, J)
     return [findall(==(sector), sector_vec) for sector in sectors]
 end
 
-function WorkerChoice(wⱼ, l, d, aⱼ, params::NamedTuple; log_d=nothing, firm_sector=nothing)
+function _default_amenity_damp(params::NamedTuple)
+    σ = Float64(_namedtuple_get(params, :σ, 1.0))
+    isfinite(σ) && σ > 0 || error("σ must be positive and finite")
+    # The BLP-style share inversion update is too aggressive for tight nests.
+    # Keep the old 0.5 damping at σ = 1, and shrink the step as σ falls.
+    return clamp(1 - 0.6 * σ, 0.5, 0.9)
+end
+
+function _resolve_amenity_damp(damp, params::NamedTuple)
+    damp_value = isnothing(damp) ? _default_amenity_damp(params) : Float64(damp)
+    isfinite(damp_value) && 0 <= damp_value < 1 ||
+        error("amenity damp must be finite and lie in [0, 1)")
+    return damp_value
+end
+
+function WorkerChoice(wⱼ, l, d, aⱼ, params::NamedTuple;
+    log_d=nothing, firm_sector=nothing, sector_indices=nothing)
     (; η, θ) = params
     σ = Float64(_namedtuple_get(params, :σ, 1.0))
     firm_sector = isnothing(firm_sector) ? _namedtuple_get(params, :firm_sector, nothing) : firm_sector
@@ -84,7 +100,8 @@ function WorkerChoice(wⱼ, l, d, aⱼ, params::NamedTuple; log_d=nothing, firm_
     log_d = isnothing(log_d) ? log.(d) : log_d
 
     log_q_zj = log.(wⱼ') .+ aⱼ' .- η .* log_d  # Z × J matrix
-    sector_indices = _firm_sector_indices(firm_sector, J)
+    sector_indices = isnothing(sector_indices) ?
+        _firm_sector_indices(firm_sector, J) : sector_indices
 
     if isnothing(sector_indices)
         isapprox(σ, 1.0; atol=1e-12) ||
@@ -131,16 +148,18 @@ function WorkerChoice(wⱼ, l, d, aⱼ, params::NamedTuple; log_d=nothing, firm_
 end
 
 function SolveAmenitiesFromEmployment(vars::NamedTuple, params::NamedTuple;
-    aⱼ_init=nothing, tol=1e-10, maxIter=5000, damp=0.5,
+    aⱼ_init=nothing, tol=1e-10, maxIter=5000, damp=nothing,
     displayGap=false, displaySummary=false, returnInfo=false)
 
     (; wⱼ, l, d, lⱼ) = vars
     (; θ) = params
     firm_sector = _namedtuple_get(vars, :firm_sector, nothing)
     J = size(d, 2)
+    sector_indices = _firm_sector_indices(firm_sector, J)
     θ > 0 || error("θ must be positive")
     length(lⱼ) == J || error("lⱼ must have length $J")
     any(ismissing, lⱼ) && error("lⱼ cannot contain missing values")
+    damp = _resolve_amenity_damp(damp, params)
 
     lⱼ_target = vec(Float64.(lⱼ))
     any(lⱼ_target .<= 0) && error("lⱼ must be strictly positive to invert finite amenities")
@@ -154,7 +173,8 @@ function SolveAmenitiesFromEmployment(vars::NamedTuple, params::NamedTuple;
     while (iter < maxIter) && (gap > tol)
         iter += 1
         aⱼ = logq ./ θ
-        choice = WorkerChoice(wⱼ, l, d, aⱼ, params; log_d=log_d, firm_sector=firm_sector)
+        choice = WorkerChoice(wⱼ, l, d, aⱼ, params;
+            log_d=log_d, firm_sector=firm_sector, sector_indices=sector_indices)
         lⱼ_model = vec(choice.lⱼ)
         gap = maximum(abs.(lⱼ_model .- lⱼ_target))
         gap <= tol && break
@@ -172,7 +192,8 @@ function SolveAmenitiesFromEmployment(vars::NamedTuple, params::NamedTuple;
 
     aⱼ = logq ./ θ
     aⱼ .-= mean(aⱼ)
-    choice = WorkerChoice(wⱼ, l, d, aⱼ, params; log_d=log_d, firm_sector=firm_sector)
+    choice = WorkerChoice(wⱼ, l, d, aⱼ, params;
+        log_d=log_d, firm_sector=firm_sector, sector_indices=sector_indices)
     gap = maximum(abs.(vec(choice.lⱼ) .- lⱼ_target))
     converged = gap <= tol
 
@@ -184,7 +205,7 @@ function SolveAmenitiesFromEmployment(vars::NamedTuple, params::NamedTuple;
         end
     end
 
-    info = (; aⱼ, lⱼ_target, choice..., converged, iterations = iter, gap)
+    info = (; aⱼ, lⱼ_target, choice..., converged, iterations = iter, gap, damp)
     return returnInfo ? info : aⱼ
 end
 
@@ -304,12 +325,15 @@ function SolveModel(vars::NamedTuple, params::NamedTuple;
 
     # initial guess (use warm start if provided)
     J_local = size(d, 2)
+    sector_indices = _firm_sector_indices(firm_sector, J_local)
     wⱼ = isnothing(wⱼ_init) ? ones(J_local) : copy(wⱼ_init)
-    log_d = log.(d)
+    log_d = _namedtuple_get(vars, :log_d, nothing)
+    log_d = isnothing(log_d) ? log.(d) : log_d
 
     # update rule
     function UpdateRule(wⱼ)
-        choice = WorkerChoice(wⱼ, l, d, aⱼ, params; log_d=log_d, firm_sector=firm_sector)
+        choice = WorkerChoice(wⱼ, l, d, aⱼ, params;
+            log_d=log_d, firm_sector=firm_sector, sector_indices=sector_indices)
         π_zj, ε_zj, lⱼ, εⱼ = choice.π_zj, choice.ε_zj, choice.lⱼ, choice.εⱼ
 
         wⱼ = α .* zⱼ .* lⱼ .^ (α - 1) .* εⱼ ./ (1 .+ εⱼ)
@@ -341,7 +365,7 @@ function SolveModel(vars::NamedTuple, params::NamedTuple;
 end
 
 function SolveFirmPrimitivesFromData(vars::NamedTuple, params::NamedTuple;
-    aⱼ_init=nothing, amenity_tol=1e-10, amenity_maxIter=5000, amenity_damp=0.5,
+    aⱼ_init=nothing, amenity_tol=1e-10, amenity_maxIter=5000, amenity_damp=nothing,
     displayGap=false, displaySummary=false, returnInfo=true)
 
     (; wⱼ, l, d, lⱼ) = vars
@@ -368,7 +392,8 @@ function SolveFirmPrimitivesFromData(vars::NamedTuple, params::NamedTuple;
         lⱼ_target = amenity.lⱼ_target,
         amenity_converged = amenity.converged,
         amenity_iterations = amenity.iterations,
-        amenity_gap = amenity.gap
+        amenity_gap = amenity.gap,
+        amenity_damp = amenity.damp
     )
 
     return returnInfo ? solution : (zⱼ, amenity.aⱼ)
@@ -381,8 +406,10 @@ function SolveZfromW(vars::NamedTuple, params::NamedTuple)
     (; wⱼ, l, d, aⱼ) = vars
     (; η, θ, α) = params
     firm_sector = _namedtuple_get(vars, :firm_sector, nothing)
+    sector_indices = _firm_sector_indices(firm_sector, size(d, 2))
 
-    choice = WorkerChoice(wⱼ, l, d, aⱼ, params; log_d = log.(d), firm_sector=firm_sector)
+    choice = WorkerChoice(wⱼ, l, d, aⱼ, params;
+        log_d = log.(d), firm_sector=firm_sector, sector_indices=sector_indices)
     lⱼ, εⱼ = choice.lⱼ, choice.εⱼ
 
     zⱼ = wⱼ .* (1 .+ εⱼ) ./ (α .* lⱼ .^ (α - 1) .* εⱼ)
@@ -443,6 +470,49 @@ function _twoperiod_fixed_effect_model(y_base, y_counterfactual, bigMA, w_diff;
         df=dof_residual(model))
 end
 
+function _ols_coefficients_or_nothing(X, y)
+    size(X, 1) >= size(X, 2) || return nothing
+    rank(X) == size(X, 2) || return nothing
+    β = X \ y
+    all(isfinite.(β)) || return nothing
+    return β
+end
+
+function _twoperiod_ols_moments(lnl_base, lnl_counterfactual,
+    lnw_base, lnw_counterfactual, bigMA, w_diff)
+
+    n = length(w_diff)
+    invalid = _invalid_moments()
+    try
+        Δlnl = vec(lnl_counterfactual) .- vec(lnl_base)
+        Δlnw = vec(lnw_counterfactual) .- vec(lnw_base)
+        bigMA = Float64.(vec(bigMA))
+        w_diff = Float64.(vec(w_diff))
+        big_wdiff = bigMA .* w_diff
+
+        X_labor = Matrix{Float64}(undef, n, 4)
+        X_labor[:, 1] .= 1.0
+        X_labor[:, 2] .= w_diff
+        X_labor[:, 3] .= bigMA
+        X_labor[:, 4] .= big_wdiff
+
+        X_wage = Matrix{Float64}(undef, n, 3)
+        X_wage[:, 1] .= 1.0
+        X_wage[:, 2] .= w_diff
+        X_wage[:, 3] .= bigMA
+
+        β_labor = _ols_coefficients_or_nothing(X_labor, Δlnl)
+        isnothing(β_labor) && return invalid
+        β_wage = _ols_coefficients_or_nothing(X_wage, Δlnw)
+        isnothing(β_wage) && return invalid
+
+        return [β_labor[3], β_labor[4], β_wage[3]]
+    catch err
+        err isa InterruptException && rethrow(err)
+        return invalid
+    end
+end
+
 function EstimateTwoPeriodDIDMoments(lnl_base, lnl_counterfactual,
     lnw_base, lnw_counterfactual, bigMA, w;
     wage_center=:treated, keep=nothing, cluster=nothing, return_stats::Bool=false)
@@ -484,6 +554,11 @@ function EstimateTwoPeriodDIDMoments(lnl_base, lnl_counterfactual,
         error("wage_center must be :treated or :all")
     end
     w_diff = w_keep .- w_center
+
+    if !return_stats && isnothing(cluster)
+        return _twoperiod_ols_moments(lnl_base_keep, lnl_counterfactual_keep,
+            lnw_base_keep, lnw_counterfactual_keep, bigMA_keep, w_diff)
+    end
 
     try
         labor = _twoperiod_fixed_effect_model(lnl_base_keep, lnl_counterfactual_keep,
@@ -572,7 +647,7 @@ end
 # Compute model moments given parameters
 function ComputeModelMoments(params_to_estimate; l, d, d′, wⱼ_data, lⱼ_data, α=nothing,
     σ=1.0, firm_sector=nothing,
-    aⱼ_init=nothing, amenity_tol=1e-10, amenity_maxIter=5000, amenity_damp=0.5,
+    aⱼ_init=nothing, amenity_tol=1e-10, amenity_maxIter=5000, amenity_damp=nothing,
     inner_tol=1e-5, inner_maxIter=3000, inner_display=false, require_convergence=true,
     continuation_steps=5, employment_change=:log, wage_center=:treated,
     moment_firm_mask=nothing, firm_ids=nothing, reg_sample_ids=nothing,
@@ -627,8 +702,9 @@ function ComputeModelMoments(params_to_estimate; l, d, d′, wⱼ_data, lⱼ_dat
     log_d′ = log.(d′)
     for step in 1:continuation_steps
         path_share = step / continuation_steps
-        d_path = exp.((1 - path_share) .* log_d .+ path_share .* log_d′)
-        vars_cf = _with_firm_sector((; l, d = d_path, zⱼ, aⱼ), firm_sector)
+        log_d_path = step == continuation_steps ? log_d′ :
+            (1 - path_share) .* log_d .+ path_share .* log_d′
+        vars_cf = _with_firm_sector((; l, d, log_d = log_d_path, zⱼ, aⱼ), firm_sector)
         if inner_display && continuation_steps > 1
             println("Counterfactual continuation step ", step, "/", continuation_steps)
         end
@@ -722,8 +798,9 @@ function ComputeModelMomentsFixedPrimitives(params_to_estimate; l, d, d′, wⱼ
     log_d′ = log.(d′)
     for step in 1:continuation_steps
         path_share = step / continuation_steps
-        d_path = exp.((1 - path_share) .* log_d .+ path_share .* log_d′)
-        vars_cf = _with_firm_sector((; l, d = d_path, zⱼ, aⱼ), firm_sector)
+        log_d_path = step == continuation_steps ? log_d′ :
+            (1 - path_share) .* log_d .+ path_share .* log_d′
+        vars_cf = _with_firm_sector((; l, d, log_d = log_d_path, zⱼ, aⱼ), firm_sector)
         if inner_display && continuation_steps > 1
             println("Counterfactual continuation step ", step, "/", continuation_steps)
         end
@@ -760,7 +837,7 @@ end
 # Objective function for estimation
 function ObjectiveFunction(params_to_estimate; l, d, d′, wⱼ_data, lⱼ_data, β_target,
     α=nothing, σ=1.0, firm_sector=nothing,
-    aⱼ_init=nothing, amenity_tol=1e-10, amenity_maxIter=5000, amenity_damp=0.5,
+    aⱼ_init=nothing, amenity_tol=1e-10, amenity_maxIter=5000, amenity_damp=nothing,
     verbose=false, inner_tol=1e-5, inner_maxIter=3000, inner_display=false,
     require_convergence=true, continuation_steps=5, employment_change=:log,
     wage_center=:treated, max_abs_moment=10.0, moment_firm_mask=nothing,
@@ -803,7 +880,7 @@ end
 function EvaluateCalibrationGrid(; l, d, d′, wⱼ_data, lⱼ_data, β_target, α=nothing,
     σ=1.0, firm_sector=nothing,
     η_grid, θ_grid, σ_grid=nothing, α_grid=nothing, inner_tol=2e-5, inner_maxIter=3000,
-    aⱼ_init=nothing, amenity_tol=1e-10, amenity_maxIter=5000, amenity_damp=0.5,
+    aⱼ_init=nothing, amenity_tol=1e-10, amenity_maxIter=5000, amenity_damp=nothing,
     continuation_steps=5, employment_change=:log, wage_center=:treated,
     max_abs_moment=10.0, verbose=true, moment_firm_mask=nothing,
     firm_ids=nothing, reg_sample_ids=nothing, restrict_to_reg_sample::Bool=false,
@@ -819,6 +896,8 @@ function EvaluateCalibrationGrid(; l, d, d′, wⱼ_data, lⱼ_data, β_target, 
     estimate_σ = !isnothing(σ_grid)
     σ_values = estimate_σ ? Float64.(σ_grid) : [Float64(σ)]
     σ_fixed = estimate_σ ? nothing : Float64(σ)
+    moment_keep = MomentFirmMask(size(d, 2);
+        moment_firm_mask, firm_ids, reg_sample_ids, restrict_to_reg_sample)
 
     grid_points = [(Float64(η), Float64(θ), Float64(σ_value), Float64(α_value))
         for η in η_grid for θ in θ_grid for σ_value in σ_values for α_value in α_values]
@@ -857,9 +936,7 @@ function EvaluateCalibrationGrid(; l, d, d′, wⱼ_data, lⱼ_data, β_target, 
                 amenity_maxIter=amenity_maxIter, amenity_damp=amenity_damp,
                 continuation_steps=continuation_steps,
                 employment_change=employment_change, wage_center=wage_center,
-                moment_firm_mask=moment_firm_mask, firm_ids=firm_ids,
-                reg_sample_ids=reg_sample_ids,
-                restrict_to_reg_sample=restrict_to_reg_sample)
+                moment_firm_mask=moment_keep)
         else
             β_model = ComputeModelMomentsFixedPrimitives(params_vec;
                 l, d, d′, wⱼ_data, lⱼ_data, fixed_primitives,
@@ -868,9 +945,7 @@ function EvaluateCalibrationGrid(; l, d, d′, wⱼ_data, lⱼ_data, β_target, 
                 inner_display=false, require_convergence=true,
                 continuation_steps=continuation_steps,
                 employment_change=employment_change, wage_center=wage_center,
-                moment_firm_mask=moment_firm_mask, firm_ids=firm_ids,
-                reg_sample_ids=reg_sample_ids,
-                restrict_to_reg_sample=restrict_to_reg_sample)
+                moment_firm_mask=moment_keep)
         end
 
         if any(isnan.(β_model)) || any(isinf.(β_model)) || any(abs.(β_model) .> max_abs_moment)
@@ -929,7 +1004,7 @@ function CalibrateEtaThetaAlpha(; l, d, d′, wⱼ_data, lⱼ_data, β_target, �
     σ=1.0, firm_sector=nothing,
     x0=[0.5, 50.0, 0.4], starts=nothing, lower=[0.1, 1.0, 0.1],
     upper=[1.0, 100.0, 0.9], iterations=250, x_abstol=1e-4, f_reltol=1e-8,
-    aⱼ_init=nothing, amenity_tol=1e-10, amenity_maxIter=5000, amenity_damp=0.5,
+    aⱼ_init=nothing, amenity_tol=1e-10, amenity_maxIter=5000, amenity_damp=nothing,
     inner_tol=1e-5, inner_maxIter=3000, continuation_steps=5,
     employment_change=:log, wage_center=:treated, max_abs_moment=10.0,
     verbose=true, show_trace=true, moment_firm_mask=nothing, firm_ids=nothing,
@@ -1063,7 +1138,7 @@ function CalibrateEtaTheta(; l, d, d′, wⱼ_data, lⱼ_data, α, β_target,
     σ=1.0, firm_sector=nothing,
     x0=[2.75, 2.0], starts=nothing, lower=[0.25, 0.25], upper=[8.0, 8.0],
     iterations=250, x_abstol=1e-4, f_reltol=1e-8,
-    aⱼ_init=nothing, amenity_tol=1e-10, amenity_maxIter=5000, amenity_damp=0.5,
+    aⱼ_init=nothing, amenity_tol=1e-10, amenity_maxIter=5000, amenity_damp=nothing,
     inner_tol=1e-5, inner_maxIter=3000, continuation_steps=5,
     employment_change=:log, wage_center=:treated, max_abs_moment=10.0,
     verbose=true, show_trace=true, moment_firm_mask=nothing, firm_ids=nothing,
