@@ -53,7 +53,7 @@ println("Model firms: ", J)
 println("Model moment sample firms: ", sum(moment_firm_mask), "/", J,
     " in ", moment_sample_label)
 
-moment_order = ["labor_bigMA", "labor_bigMA_wdiff", "wage_bigMA"]
+moment_order = ["labor_bigMA", "labor_bigMA_wdiff", "labor_wdiff_post"]
 moment_targets = CSV.read(moment_target_path, DataFrame)
 moment_lookup = Dict(String(row.moment) => Float64(row.beta) for row in eachrow(moment_targets))
 missing_moments = setdiff(moment_order, collect(keys(moment_lookup)))

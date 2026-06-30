@@ -344,6 +344,7 @@ function _twoperiod_fe_dataframe(y_base, y_counterfactual, bigMA, w_diff, cluste
         w_diff = w_diff_long,
         big_post = big_long .* post,
         big_wdiff_post = big_long .* w_diff_long .* post,
+        wdiff_post = w_diff_long .* post,
     )
     if !isnothing(cluster)
         any(ismissing, cluster) && error("cluster cannot contain missing values in the kept sample")
@@ -365,12 +366,14 @@ function _twoperiod_fixed_effect_model(y_base, y_counterfactual, bigMA, w_diff;
 
     df = _twoperiod_fe_dataframe(y_base, y_counterfactual, bigMA, w_diff, cluster)
     rhs = include_wdiff_interaction ?
-        term(:big_post) + term(:big_wdiff_post) + fe(:firm) + fe(:period) +
-            fe(:period)&term(:w_diff) :
-        term(:big_post) + fe(:firm) + fe(:period) + fe(:period)&term(:w_diff)
+        term(:big_post) + term(:big_wdiff_post) + term(:wdiff_post) +
+            fe(:firm) + fe(:period) :
+        term(:big_post) + fe(:firm) + fe(:period)
     formula = term(:y) ~ rhs
     model = isnothing(cluster) ? reg(df, formula) : reg(df, formula, Vcov.cluster(:cluster))
-    wanted = include_wdiff_interaction ? ["big_post", "big_wdiff_post"] : ["big_post"]
+    wanted = include_wdiff_interaction ?
+        ["big_post", "big_wdiff_post", "wdiff_post"] :
+        ["big_post"]
     idx = _coef_positions(model, wanted)
     beta = coef(model)[idx]
     vc = vcov(model)[idx, idx]
@@ -408,7 +411,7 @@ function EstimateTwoPeriodDIDMoments(lnl_base, lnl_counterfactual,
 
     invalid = return_stats ?
         (; beta = [Inf, Inf, Inf], se = [Inf, Inf, Inf], t = [Inf, Inf, Inf],
-            vcov_labor = fill(Inf, 2, 2), vcov_wage = fill(Inf, 1, 1),
+            vcov_labor = fill(Inf, 3, 3), vcov_wage = fill(Inf, 0, 0),
             n = length(lnl_base_keep), n_clusters = fill(missing, 3), df = fill(missing, 3),
             model_labor = nothing, model_wage = nothing) :
         [Inf, Inf, Inf]
@@ -424,25 +427,26 @@ function EstimateTwoPeriodDIDMoments(lnl_base, lnl_counterfactual,
     w_diff = w_keep .- w_center
 
     try
+        # Match the Stata calibration regression:
+        # reghdfe lnemp i1.BIG#i1.post c.demean_lnw0#i1.BIG#i1.post
+        #     c.demean_lnw0#i1.post, a(id year ...)
         labor = _twoperiod_fixed_effect_model(lnl_base_keep, lnl_counterfactual_keep,
             bigMA_keep, w_diff; cluster=cluster_keep, include_wdiff_interaction=true)
-        wage = _twoperiod_fixed_effect_model(lnw_base_keep, lnw_counterfactual_keep,
-            bigMA_keep, w_diff; cluster=cluster_keep, include_wdiff_interaction=false)
 
-        beta = [labor.beta[1], labor.beta[2], wage.beta[1]]
+        beta = labor.beta
         if !return_stats
             return beta
         end
 
-        se = [labor.se[1], labor.se[2], wage.se[1]]
-        t = [labor.t[1], labor.t[2], wage.t[1]]
+        se = labor.se
+        t = labor.t
         n_clusters = isnothing(cluster_keep) ? fill(missing, 3) :
-            [labor.n_clusters, labor.n_clusters, wage.n_clusters]
-        df = [labor.df, labor.df, wage.df]
+            fill(labor.n_clusters, 3)
+        df = fill(labor.df, 3)
 
-        return (; beta, se, t, vcov_labor=labor.vcov, vcov_wage=wage.vcov,
+        return (; beta, se, t, vcov_labor=labor.vcov, vcov_wage=fill(NaN, 0, 0),
             n=labor.n, n_clusters, df, model_labor=labor.model,
-            model_wage=wage.model)
+            model_wage=nothing)
     catch err
         if err isa InterruptException
             rethrow(err)
@@ -740,7 +744,7 @@ function EvaluateCalibrationGrid(; l, d, d′, wⱼ_data, lⱼ_data, β_target, 
     α_col = Vector{Float64}(undef, total)
     β_labor_bigMA_col = Vector{Float64}(undef, total)
     β_labor_bigMA_wdiff_col = Vector{Float64}(undef, total)
-    β_wage_bigMA_col = Vector{Float64}(undef, total)
+    β_labor_wdiff_post_col = Vector{Float64}(undef, total)
     objective_col = Vector{Float64}(undef, total)
     progress = Ref(0)
     progress_lock = ReentrantLock()
@@ -786,7 +790,7 @@ function EvaluateCalibrationGrid(; l, d, d′, wⱼ_data, lⱼ_data, β_target, 
         α_col[idx] = α_value
         β_labor_bigMA_col[idx] = β_model[1]
         β_labor_bigMA_wdiff_col[idx] = β_model[2]
-        β_wage_bigMA_col[idx] = β_model[3]
+        β_labor_wdiff_post_col[idx] = β_model[3]
         objective_col[idx] = obj
 
         if verbose
@@ -808,7 +812,7 @@ function EvaluateCalibrationGrid(; l, d, d′, wⱼ_data, lⱼ_data, β_target, 
         α = α_col,
         β_labor_bigMA = β_labor_bigMA_col,
         β_labor_bigMA_wdiff = β_labor_bigMA_wdiff_col,
-        β_wage_bigMA = β_wage_bigMA_col,
+        β_labor_wdiff_post = β_labor_wdiff_post_col,
         objective = objective_col
     )
     sort!(results, :objective)

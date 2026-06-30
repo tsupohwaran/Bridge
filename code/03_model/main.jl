@@ -95,11 +95,11 @@ town_ind_cluster = [ismissing(town) || ismissing(ind) ? missing : string(town, "
     for (town, ind) in zip(firm_town, firm_ind)];
 
 #==================================================#
-# Calibration: Back out η and θ from labor and wage moments with fixed α
+# Calibration: Back out η and θ from employment moments with fixed α
 #==================================================#
 
 moment_target_path = joinpath(projPath, "output", "tables", "calibration_moments.csv")
-moment_order = ["labor_bigMA", "labor_bigMA_wdiff", "wage_bigMA"]
+moment_order = ["labor_bigMA", "labor_bigMA_wdiff", "labor_wdiff_post"]
 moment_targets = CSV.read(moment_target_path, DataFrame)
 moment_lookup = Dict(String(row.moment) => Float64(row.beta) for row in eachrow(moment_targets))
 missing_moments = setdiff(moment_order, collect(keys(moment_lookup)))
@@ -111,7 +111,7 @@ println()
 
 η_bounds = [0.1, 5.0]
 θ_bounds = [0.1, 10]
-α_fixed = 0.4
+α_fixed = 0.8
 # α_bounds = [0.1, 0.9]
 employment_change = :log
 wage_center = :all
@@ -119,11 +119,11 @@ wage_center = :all
 # use grid search to find good starting points for the optimization
 η_grid = [0.5, 0.7, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0]
 θ_grid = [0.1, 0.5, 1.0, 5.0, 10.0]
-α_grid = [0.2, 0.4, 0.6, 0.8]
+# α_grid = [0.2, 0.4, 0.6, 0.8]
 grid_results = EvaluateCalibrationGrid(;
     l, d, d′, wⱼ_data, lⱼ_data, β_target, 
-    # α = α_fixed,
-    α_grid,
+    α = α_fixed,
+    # α_grid,
     η_grid, θ_grid,
     inner_tol = 2e-5,
     inner_maxIter = 3000,
