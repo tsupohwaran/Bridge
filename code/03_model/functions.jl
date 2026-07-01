@@ -163,6 +163,7 @@ function SolveAmenitiesFromEmployment(vars::NamedTuple, params::NamedTuple;
 
     lⱼ_target = vec(Float64.(lⱼ))
     any(lⱼ_target .<= 0) && error("lⱼ must be strictly positive to invert finite amenities")
+    log_lⱼ_target = log.(lⱼ_target)
     logq = isnothing(aⱼ_init) ? zeros(J) : θ .* vec(Float64.(aⱼ_init))
     length(logq) == J || error("aⱼ_init must have length $J")
     logq .-= mean(logq)
@@ -179,7 +180,7 @@ function SolveAmenitiesFromEmployment(vars::NamedTuple, params::NamedTuple;
         gap = maximum(abs.(lⱼ_model .- lⱼ_target))
         gap <= tol && break
 
-        update = log.(lⱼ_target) .- log.(max.(lⱼ_model, eps(Float64)))
+        update = log_lⱼ_target .- log.(max.(lⱼ_model, eps(Float64)))
         logq_new = logq .+ update
         logq_new .-= mean(logq_new)
         logq = damp .* logq .+ (1 - damp) .* logq_new

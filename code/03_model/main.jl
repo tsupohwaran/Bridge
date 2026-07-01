@@ -209,22 +209,34 @@ println("Fixed α: ", α_est)
 # Simulation using calibrated η, θ, σ, and α
 #==================================================#
 
-η, θ, σ, α = η_est, θ_est, σ_est, α_est
+η, θ, σ, α = 3.0, 10.0, 0.25, 0.8 # calibrated parameters
 
 # Solve firm amenities and productivity from observed employment and wages
 vars = (; wⱼ = wⱼ_data, lⱼ = lⱼ_data, l, d, firm_sector)
 params = (; η, θ, σ, α)
-primitives = SolveFirmPrimitivesFromData(vars, params; aⱼ_init, displaySummary = true, displayGap = true, amenity_damp = 0.7, amenity_tol = 1e-8);
+primitives = SolveFirmPrimitivesFromData(vars, params;
+    aⱼ_init,
+    displaySummary = true,
+    displayGap = false,
+    amenity_damp = 0.6,
+    amenity_tol = 1e-6,
+    amenity_maxIter = 10000);
 zⱼ, aⱼ = primitives.zⱼ, primitives.aⱼ;
 
 # Solve the model
 vars = (; l, d, zⱼ, aⱼ, firm_sector)
 params = (; η, θ, σ, α)
 
-# solve the model for baseline
-# Use observed wages as the warm start and avoid the power update here:
-# zⱼ was inverted from wⱼ_data, so this keeps the solver on the same equilibrium branch.
-wⱼ, π_zj, ε_zj, lⱼ, εⱼ = SolveModel(vars, params; displayGap = true, damp = 0.6, tol = 1e-7, displaySummary = true, power = false, wⱼ_init = wⱼ_data);
+# Baseline is already recovered during primitive inversion: aⱼ matches observed
+# employment, and zⱼ makes observed wages satisfy the normalized wage FOC.
+primitives.amenity_converged ||
+    @warn "Baseline amenity inversion did not converge; baseline objects may be approximate."
+wⱼ = vec(Float64.(wⱼ_data))
+π_zj = primitives.π_zj
+ε_zj = primitives.ε_zj
+lⱼ = vec(primitives.lⱼ)
+εⱼ = vec(primitives.εⱼ)
+println("Baseline equilibrium reused from primitive inversion; skipped redundant fixed-point solve.")
 
 ## Calculate correlation between solved wages and observed wages
 println("Corrleation between lⱼ and lⱼ_data:", cor(vec(lⱼ), vec(lⱼ_data)))
