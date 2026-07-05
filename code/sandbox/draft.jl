@@ -11,7 +11,7 @@ include(joinpath(projPath, "code", "03_model", "functions.jl"))
 const Z = 128
 const eta_grid = [0.1, 0.9, 3.0]
 const alpha_fixed = 0.8
-const theta_fixed = 10.0
+const theta_fixed = 5
 const sigma_fixed = 0.25
 const amenity_tol = 1e-6
 const amenity_damp = 0.6
