@@ -1,8 +1,8 @@
 # Model Notes
 
-Last updated: 2026-06-28.
+Last updated: 2026-07-05.
 
-This document summarizes the structural model as read from current Julia code, draft notes, and user corrections. It separates verified code status from remaining open interpretation issues. The latest user correction is that the model code should use the nested logit distribution in `manuscript/draft/Model.lyx`, define the nest index `s` as firm sector `ind_agg`, and use the same three calibration moments to back out `η`, `θ`, and `σ` with fixed `α`.
+This document summarizes the structural model as read from current Julia code, draft notes, and user corrections. It separates verified code status from remaining open interpretation issues. The latest update is that the baseline sector-nested logit model is now accompanied by a diagnostic wage-ladder poaching extension, documented in `docs/WAGE_LADDER_POACHING_GE.md`.
 
 ## Current Implemented Julia Model
 
@@ -21,7 +21,7 @@ Verified:
   - `w_j`: firm wage.
   - `a_j`: firm-level non-pecuniary amenity, called firm amenity in the final paper, implemented as an additive utility shifter and inverted from observed firm employment.
   - `z_j`: firm productivity, backed out from observed wages.
-  - `α`: decreasing returns parameter, set to `0.4` in `main.jl`.
+  - `α`: decreasing returns parameter, set to `0.8` in the current `main.jl` calibration block.
   - `η`: commuting-cost elasticity.
   - `θ`: preference dispersion / responsiveness parameter.
   - `σ`: nested-logit sector correlation parameter.
@@ -44,7 +44,7 @@ U_izj = ln(w_j) + a_j - η ln(d_zj) + (1/θ) ξ_ij
 ```
 
 Uncertain:
-- Current simulations still need to be rerun and inspected after the nested-logit code update.
+- The sector-only nested-logit simulations still need final paper-facing validation, especially because the wage-ladder poaching extension is now under diagnostic testing.
 
 ## Target Manuscript Model: Sector-Nested Logit
 
@@ -212,7 +212,7 @@ Verified:
 - Current `main.jl` sets:
 
 ```text
-α = 0.4
+α = 0.8
 moment_order = ["labor_bigMA", "labor_bigMA_wdiff", "wage_bigMA"]
 σ_bounds = [0.1, 1.0]
 ```
@@ -251,6 +251,43 @@ Inferred:
 Uncertain:
 - The preferred economic interpretation and reporting normalization for inverted firm amenities need confirmation.
 - Whether three moments are sufficiently informative for stable separate identification of `η`, `θ`, and `σ` remains an empirical diagnostics question.
+
+## Wage-Ladder Poaching Extension
+
+Verified:
+- The candidate extension is implemented in `code/03_model/diagnose_poaching_groups.jl`.
+- A detailed solution note is recorded in `docs/WAGE_LADDER_POACHING_GE.md`.
+- The extension constructs baseline employer groups as:
+
+```text
+g(j) = ind_agg(j) × baseline_wage_decile(j)
+```
+
+- It infers origin-by-group baseline masses from model-implied baseline origin shares:
+
+```text
+M_zg = sum_{j:g(j)=g} L_j_data * gamma_zj,
+gamma_zj = pi_zj * l_z / L_j.
+```
+
+- Post-bridge utility for a worker in baseline group `g` choosing firm `j` includes:
+
+```text
+rho * max(log(w_j) - group_mean_log_wage_g, 0)
+```
+
+- The full-GE solver recomputes group-specific nested-logit probabilities, firm labor, firm labor supply elasticities, and wages until the log-wage fixed point converges.
+- The fast amenity inversion in this diagnostic matched baseline firm employment with final gap about `9.89e-6` in 779 iterations.
+- In the verified diagnostic run, full GE converged for `rho ∈ {0, 0.25, 0.5, 1}` with `kappa = 0`.
+
+Inferred:
+- A positive `rho` gives workers initially attached to low-wage employer groups an additional pull toward higher-wage firms.
+- This mechanism can make low-wage control firms lose more workers after the bridge, which turns the control-firm wage slope in employment changes positive.
+- The full-GE diagnostic shows that `rho = 0` leaves `beta_labor_wdiff_post` slightly negative, while `rho > 0` makes it positive.
+
+Uncertain:
+- `rho` has not yet been formally calibrated.
+- It remains open whether this extension should be the final model, a robustness mechanism, or a diagnostic explanation for the sector-only model's sign problem.
 
 ## Mechanism As Currently Understood
 

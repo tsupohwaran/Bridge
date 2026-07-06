@@ -1,6 +1,6 @@
 # User Corrections
 
-Last updated: 2026-06-28.
+Last updated: 2026-07-05.
 
 Use this file to record corrections from the project owner. When this file changes, update the other AI understanding documents accordingly.
 
@@ -22,6 +22,7 @@ Use this file to record corrections from the project owner. When this file chang
 - The preferred event timing treats 2011 as the treatment year. Empirical `post` should be defined as `year >= 2011`.
 - SUTVA / general-equilibrium spillovers are acknowledged. The DID coefficients identify relative changes of more affected firms compared with less affected firms, not the absolute total effect of the bridge. This limitation is one reason the paper needs a general-equilibrium model.
 - The preferred model mechanism is that traffic integration weakens labor-market power on average, but high-wage / large firms with large accessibility improvements may experience increased labor-market power / markdown.
+- As of 2026-07-05, document and test a candidate wage-ladder poaching extension in which baseline employer groups are `ind_agg × baseline wage decile`, and workers receive an additional utility term `rho * max(log w_j - group_mean_log_wage, 0)` when considering firms above their baseline employer group's wage level.
 
 ## Pending Correction Slots
 
@@ -31,7 +32,7 @@ Use this file to record corrections from the project owner. When this file chang
 - Preferred data sources:
 - Preferred empirical specification: two-period DID moments in `ComputeModelMoments` using appended baseline/counterfactual firm data and absorbed `id`, `year`, and `c.w_diff#year` effects; empirical `post` should use `year >= 2011`.
 - Calibration targets: `β_target` comes from empirical results; local empirical scripts may be updated later.
-- Model version: nested logit over sector nests, following `manuscript/draft/Model.lyx`, with `s` denoting `ind_agg`. The current Julia calibration should estimate `η`, `θ`, and `σ` from the same three reduced-form moments while keeping `α` fixed.
+- Model version: nested logit over sector nests, following `manuscript/draft/Model.lyx`, with `s` denoting `ind_agg`. The current Julia calibration should estimate `η`, `θ`, and `σ` from the same three reduced-form moments while keeping `α` fixed. A wage-ladder poaching extension is under diagnostic testing; it is not yet confirmed as the final calibrated model.
 - Results to treat as current:
 - Files/scripts to treat as deprecated:
 - Terminology preferences: `a_j` = firm amenity; `z` = region/street/town; `ν_j` = markdown (`>1`).

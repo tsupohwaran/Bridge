@@ -379,7 +379,8 @@ begin
         ylabel = "dlnlⱼ",
         title = "Employment Change vs Market Access Change",
         legend = false,
-        markersize = 3,
+        markersize = 1.5,
+        markerstrokewidth = 0,
         alpha = 0.6,
         dpi = 1000)
 end

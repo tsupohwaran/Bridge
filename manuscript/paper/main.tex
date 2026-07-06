@@ -340,6 +340,86 @@ be the share of firm \(j\)'s workforce that comes from residence location \(z\).
 \end{equation}
 The bridge changes commuting times, and hence changes sector choices \(\pi_{zs}\), within-sector firm choices \(\pi_{zj\mid s}\), unconditional firm choices \(\pi_{zj}\), worker-origin composition \(\omega_{zj}\), and the labor supply elasticity \(\varepsilon_j\).
 
+\subsection{Baseline Employer Groups and Wage-Ladder Poaching}
+The sector-nested model allows firms within the same industry to be closer substitutes, but it does not by itself make low-wage firms compete more directly with high-wage treated firms for the same workers. To capture this channel without worker-level employment histories, we augment the worker choice problem with baseline employer groups. Each firm is assigned to a group
+\[
+    g(j)=\left(s(j),b(j)\right),
+\]
+where \(s(j)\) is the sector and \(b(j)\) is the firm's baseline wage bin. In the quantitative diagnostic below, \(b(j)\) is the decile of the baseline firm wage distribution. Let \(\bar{\ell}_g\) denote the employment-weighted mean log wage among firms in group \(g\), and let \(s_g\) denote the sector component of group \(g\).
+
+Because the data do not observe worker-to-firm flows, the mass of workers initially attached to each baseline employer group is inferred from the baseline nested-logit allocation. Let
+\begin{equation}
+    \gamma^0_{zj}
+    =
+    \frac{l_z\pi^0_{zj}}{L^0_j}
+    \label{eq:baseline_origin_firm_share}
+\end{equation}
+be the share of firm \(j\)'s baseline workforce that comes from residence location \(z\). The implied mass of workers living in \(z\) and attached to baseline employer group \(g\) is
+\begin{equation}
+    M_{zg}
+    =
+    \sum_{j:g(j)=g}
+    L_j^{data}\gamma^0_{zj}.
+    \label{eq:baseline_group_mass}
+\end{equation}
+This construction preserves the observed baseline firm employment distribution while adding an approximate origin-by-employer-group state variable.
+
+Workers from baseline group \(g\) choose among all firms after the commuting shock, but their systematic utility includes a wage-ladder term:
+\begin{equation}
+    \log Q_{zgj}
+    =
+    \log w_j
+    +
+    a_j
+    -
+    \eta\log d_{zj}
+    +
+    \rho\left[\log w_j-\bar{\ell}_g\right]_+
+    -
+    \chi\mathbbm{1}\{s(j)\neq s_g\}.
+    \label{eq:poaching_group_attractiveness}
+\end{equation}
+The parameter \(\rho\geq 0\) governs how strongly workers are drawn toward firms above the wage level of their baseline employer group. The parameter \(\chi\geq 0\) allows an additional penalty for moving outside the baseline sector group; the diagnostic exercise below sets \(\chi=0\). Given \(Q_{zgj}\), group-specific sector and firm probabilities are computed with the same nested-logit formula as in equations \eqref{eq:model_sector_probability}--\eqref{eq:model_choice_probability}, replacing \(Q_{zj}\) with \(Q_{zgj}\). Denote the resulting probability by \(\widetilde{\pi}_{zgj}\). Firm labor in the extended model is then
+\begin{equation}
+    L_j
+    =
+    \sum_{z\in Z}\sum_{g\in G}
+    M_{zg}\widetilde{\pi}_{zgj}.
+    \label{eq:poaching_group_labor}
+\end{equation}
+When \(\rho=\chi=0\), the group-specific utilities collapse to the baseline sector-nested utility and \(\sum_g M_{zg}=l_z\), so equation \eqref{eq:poaching_group_labor} nests the original labor allocation.
+
+The wage-ladder term also changes the own-wage elasticity. Away from the kink \(\log w_j=\bar{\ell}_g\), define
+\[
+    \lambda_{gj}
+    =
+    1+\rho\mathbbm{1}\{\log w_j>\bar{\ell}_g\}.
+\]
+The origin-group-firm elasticity is
+\begin{equation}
+    \widetilde{\varepsilon}_{zgj}
+    =
+    \lambda_{gj}\theta
+    \left[
+    \frac{1}{\sigma}
+    +
+    \left(1-\frac{1}{\sigma}\right)\widetilde{\pi}_{zgj\mid s(j)}
+    -
+    \widetilde{\pi}_{zgj}
+    \right],
+    \label{eq:poaching_group_origin_elasticity}
+\end{equation}
+and the firm-level elasticity is
+\begin{equation}
+    \varepsilon_j
+    =
+    \sum_{z\in Z}\sum_{g\in G}
+    \frac{M_{zg}\widetilde{\pi}_{zgj}}{L_j}
+    \widetilde{\varepsilon}_{zgj}.
+    \label{eq:poaching_group_firm_elasticity}
+\end{equation}
+Economically, a positive \(\rho\) makes low-wage employer groups more responsive to accessible firms higher on the wage ladder. If the bridge improves access to high-wage treated firms, low-wage control firms can lose more workers to those treated firms, generating a positive control-group wage slope in employment changes.
+
 \subsection{Firms and Markdown}
 Firm \(j\) produces with decreasing returns to labor,
 \begin{equation}
@@ -377,6 +457,8 @@ Thus, a firm with a lower labor supply elasticity has greater labor-market power
 
 \subsection{Equilibrium, Inversion, and Bridge Counterfactual}
 Given primitives \(\{l_z,d_{zj},A_j,a_j,s(j)\}\) and parameters \((\alpha,\eta,\theta,\sigma)\), an equilibrium is a vector of wages \(\{w_j\}_{j\in J}\) such that worker choices satisfy equations \eqref{eq:model_sector_probability}--\eqref{eq:model_choice_probability}, firm labor satisfies equation \eqref{eq:model_labor}, firm-level elasticities satisfy equation \eqref{eq:model_firm_elasticity}, and wages satisfy equation \eqref{eq:model_wage_foc}. Since only relative wages matter for worker choices, the numerical solution normalizes the aggregate wage bill.
+
+In the wage-ladder extension, the equilibrium definition is identical except that firm labor and elasticities are given by equations \eqref{eq:poaching_group_labor} and \eqref{eq:poaching_group_firm_elasticity}. The numerical solver iterates on wages. Given a wage vector, it computes group-specific worker choices, firm labor, and firm-level elasticities, updates wages using equation \eqref{eq:model_wage_foc}, and repeats until the maximum log wage update is small.
 
 For a candidate value of \((\eta,\theta,\sigma)\), the model maps the observed baseline economy into firm primitives in two steps. First, firm amenities are inverted from observed baseline employment and wages:
 \begin{equation}
@@ -453,5 +535,52 @@ where \(\beta^{M}_{L,1}\) and \(\beta^{M}_{L,2}\) are obtained by applying the e
     \label{eq:calibration_objective}
 \end{equation}
 where the calibration uses an identity weighting matrix \(W\) and searches over a compact admissible parameter space. The two employment moments discipline the magnitude and wage heterogeneity of labor reallocation induced by the commuting-cost shock. The wage moment adds information about the equilibrium wage response, which is shaped by both labor reallocation and changes in firms' labor supply elasticities. Since commuting-time changes enter worker choice through the commuting-cost parameter, the overall choice sensitivity, and the sector-nest parameter, the wage and elasticity channels are important for separating the commuting-cost response from substitution across and within sectors.
+
+\subsection{Diagnostic Wage-Ladder Results}
+
+The baseline sector-nested model generates a negative control-group wage slope in the employment change, while the empirical counterpart is positive. To diagnose this sign, we compute the two-period first-difference projection
+\begin{equation}
+    \Delta\log L_j
+    =
+    \gamma_L\widetilde{w}_{j0}
+    +
+    \beta_{L,1} BigMA_j
+    +
+    \beta_{L,2} BigMA_j\widetilde{w}_{j0}
+    +
+    u_j,
+    \label{eq:diagnostic_first_difference}
+\end{equation}
+on the model-generated firm panel. The coefficient \(\gamma_L\) is the slope of employment changes with respect to baseline wages among control firms. A positive value means that low-wage control firms lose more employment, consistent with the poaching interpretation of the reduced-form pattern.
+
+Table \ref{tab:poaching_ge_diagnostics} reports the current diagnostic exercise using sector nests, ten baseline wage bins, inverted firm amenities, and
+\[
+    (\eta,\theta,\sigma,\alpha)=(0.9,10,0.25,0.8),
+    \qquad
+    \chi=0.
+\]
+The full-GE rows solve the wage fixed point after the commuting shock. With \(\rho=0\), the full-GE slope remains slightly negative. For positive \(\rho\), the full-GE slope turns positive and rises with the strength of the wage-ladder channel.
+
+\begin{table}[!htbp]\centering
+\caption{Wage-Ladder Poaching Diagnostic}
+\label{tab:poaching_ge_diagnostics}
+\small
+\begin{threeparttable}
+\begin{tabular}{lcccc}
+\toprule
+\(\rho\) & Static \(\gamma_L\) & Full-GE \(\gamma_L\) & GE iterations & GE gap \\
+\midrule
+0.00 & -0.405 & -0.041 & 239 & \(9.64\times 10^{-5}\) \\
+0.25 & 1.198 & 0.325 & 112 & \(9.74\times 10^{-5}\) \\
+0.50 & 1.303 & 0.575 & 243 & \(9.92\times 10^{-5}\) \\
+1.00 & 1.191 & 0.871 & 116 & \(9.75\times 10^{-5}\) \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}[flushleft]
+\footnotesize
+\item Notes: The table is produced by the diagnostic script \texttt{code/03\_model/diagnose\_poaching\_groups.jl}. Static rows hold wages fixed at baseline values after the commuting shock. Full-GE rows solve for post-shock wages using the firm first-order condition. The coefficient \(\gamma_L\) is the control-firm wage slope in equation \eqref{eq:diagnostic_first_difference}.
+\end{tablenotes}
+\end{threeparttable}
+\end{table}
 
 \end{document}
