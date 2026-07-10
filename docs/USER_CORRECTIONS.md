@@ -1,6 +1,6 @@
 # User Corrections
 
-Last updated: 2026-06-28.
+Last updated: 2026-07-10.
 
 Use this file to record corrections from the project owner. When this file changes, update the other AI understanding documents accordingly.
 
@@ -22,6 +22,7 @@ Use this file to record corrections from the project owner. When this file chang
 - The preferred event timing treats 2011 as the treatment year. Empirical `post` should be defined as `year >= 2011`.
 - SUTVA / general-equilibrium spillovers are acknowledged. The DID coefficients identify relative changes of more affected firms compared with less affected firms, not the absolute total effect of the bridge. This limitation is one reason the paper needs a general-equilibrium model.
 - The preferred model mechanism is that traffic integration weakens labor-market power on average, but high-wage / large firms with large accessibility improvements may experience increased labor-market power / markdown.
+- After routing, when multiple government-place names map to the same census `town`, aggregate `dzj` and `dzj_prime` to their fixed arithmetic means by `id town`. Do not use forced duplicate dropping, which can retain different source-town travel times for firms at identical coordinates.
 
 ## Pending Correction Slots
 

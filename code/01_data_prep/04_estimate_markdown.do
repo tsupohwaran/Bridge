@@ -22,7 +22,7 @@ forvalues ind = 1/12 {
     keep if ind == `ind'
     if _N == 0 continue
     xtset firm_id year, yearly
-    do "$proj_path/code/01_data_prep/04_markdown_func.do" // main estimation code
+    do "$proj_path/code/utils/04_markdown_func.do" // main estimation code
     save "$ctsd_temp_path/md_est_07_20_ind`ind'.dta", replace
 }
 
@@ -38,7 +38,7 @@ drop if alpha_m >= 1
 * winsorize md_TL by industry-year
 egen ind_year = group(ind year)
 winsor2 md_TL, cuts(5 95) by(ind_year) suffix(_w)
-order id firm_name year md_TL md_TL_w
+order id firm_name year md_TL md_TL_w tfp_TL omega_TL
 save "$ctsd_processed_path/result_markdown_est_07_20.dta", replace
 
 * calculate weighted mean of markdown by sector
@@ -78,5 +78,5 @@ save `qingdao_sdid', replace
 
 use "$ctsd_processed_path/result_markdown_est_07_20.dta", clear
 merge 1:1 sdid using `qingdao_sdid', keep(3) nogen
-keep id year md_TL md_TL_w
+keep id year md_TL md_TL_w tfp_TL omega_TL
 save "$ctsd_processed_path/result_markdown_est_qingdao_07_20.dta", replace

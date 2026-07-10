@@ -486,8 +486,8 @@ savefig(projPath * "/output/figures/model/wage_change.png")
 
 
 # markdown
-ν = 1 .+ 1 ./ εⱼ
-ν′ = 1 .+ 1 ./ εⱼ′
+ν = ModelMarkdown(εⱼ, params)
+ν′ = ModelMarkdown(εⱼ′, params)
 ν̂ = ν′ ./ ν
 dlnν = clamp.(ν̂ .- 1, -0.001, 0.001)
 dlnν = ν̂ .- 1

@@ -1,0 +1,7 @@
+﻿lmp_mode,label,moment,beta,se,t,n_clusters,df
+monopsony,monopsony markdown,labor_bigMA,-0.3641050090432526,0.043616547926365934,-8.34786397258994,795,794
+monopsony,monopsony markdown,labor_bigMA_wdiff,0.24501860649681964,0.06019533768783101,4.070391759698563,795,794
+monopsony,monopsony markdown,wage_bigMA,0.07410549859988633,0.008867463892692532,8.357011598429503,795,794
+perfectly_elastic,perfectly elastic / no markdown,labor_bigMA,-0.38387076243527346,0.04516520403772832,-8.499258901047158,795,794
+perfectly_elastic,perfectly elastic / no markdown,labor_bigMA_wdiff,0.2501182728814987,0.06171941871606006,4.0525053230356365,795,794
+perfectly_elastic,perfectly elastic / no markdown,wage_bigMA,0.07779533053714861,0.00914794506137108,8.504131803945134,795,794

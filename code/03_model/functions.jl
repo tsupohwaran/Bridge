@@ -56,6 +56,29 @@ function _with_firm_sector(nt::NamedTuple, firm_sector)
     return isnothing(firm_sector) ? nt : (; nt..., firm_sector)
 end
 
+function LaborMarketMode(params::NamedTuple)
+    mode = _namedtuple_get(params, :lmp_mode, :monopsony)
+    mode = mode isa Symbol ? mode : Symbol(mode)
+
+    if mode in (:monopsony, :endogenous, :endogenous_markdown)
+        return :monopsony
+    elseif mode in (:perfectly_elastic, :competitive, :no_markdown)
+        return :perfectly_elastic
+    else
+        error("Unsupported lmp_mode: $mode. Use :monopsony or :perfectly_elastic.")
+    end
+end
+
+function FirmWageWedge(εⱼ, params::NamedTuple)
+    mode = LaborMarketMode(params)
+    return mode == :monopsony ? εⱼ ./ (1 .+ εⱼ) : ones(size(εⱼ))
+end
+
+function ModelMarkdown(εⱼ, params::NamedTuple)
+    mode = LaborMarketMode(params)
+    return mode == :monopsony ? 1 .+ 1 ./ εⱼ : ones(size(εⱼ))
+end
+
 function _firm_sector_indices(firm_sector, J)
     isnothing(firm_sector) && return nothing
     length(firm_sector) == J || error("firm_sector must have length $J")
@@ -337,7 +360,8 @@ function SolveModel(vars::NamedTuple, params::NamedTuple;
             log_d=log_d, firm_sector=firm_sector, sector_indices=sector_indices)
         π_zj, ε_zj, lⱼ, εⱼ = choice.π_zj, choice.ε_zj, choice.lⱼ, choice.εⱼ
 
-        wⱼ = α .* zⱼ .* lⱼ .^ (α - 1) .* εⱼ ./ (1 .+ εⱼ)
+        wage_wedge = FirmWageWedge(εⱼ, params)
+        wⱼ = α .* zⱼ .* lⱼ .^ (α - 1) .* wage_wedge
         wⱼ = wⱼ ./ sum(wⱼ .* lⱼ) # normalize total wage bill to 1
         return wⱼ, π_zj, ε_zj, lⱼ, εⱼ
     end
@@ -380,7 +404,8 @@ function SolveFirmPrimitivesFromData(vars::NamedTuple, params::NamedTuple;
 
     lⱼ = amenity.lⱼ
     εⱼ = amenity.εⱼ
-    zⱼ = wⱼ .* (1 .+ εⱼ) ./ (α .* lⱼ .^ (α - 1) .* εⱼ)
+    wage_wedge = FirmWageWedge(εⱼ, params)
+    zⱼ = wⱼ ./ (α .* lⱼ .^ (α - 1) .* wage_wedge)
     zⱼ = zⱼ ./ mean(zⱼ) # normalize zⱼ to have mean 1
 
     solution = (;
@@ -390,6 +415,8 @@ function SolveFirmPrimitivesFromData(vars::NamedTuple, params::NamedTuple;
         ε_zj = amenity.ε_zj,
         lⱼ,
         εⱼ,
+        wage_wedge,
+        markdown = ModelMarkdown(εⱼ, params),
         lⱼ_target = amenity.lⱼ_target,
         amenity_converged = amenity.converged,
         amenity_iterations = amenity.iterations,
@@ -413,7 +440,8 @@ function SolveZfromW(vars::NamedTuple, params::NamedTuple)
         log_d = log.(d), firm_sector=firm_sector, sector_indices=sector_indices)
     lⱼ, εⱼ = choice.lⱼ, choice.εⱼ
 
-    zⱼ = wⱼ .* (1 .+ εⱼ) ./ (α .* lⱼ .^ (α - 1) .* εⱼ)
+    wage_wedge = FirmWageWedge(εⱼ, params)
+    zⱼ = wⱼ ./ (α .* lⱼ .^ (α - 1) .* wage_wedge)
     zⱼ = zⱼ ./ mean(zⱼ) # normalize zⱼ to have mean 1
     return zⱼ
 end

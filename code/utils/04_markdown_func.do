@@ -249,17 +249,24 @@ qui  {
 	gen beta_k1m1=beta_dlwtl[1,6]
 	gen beta_l1m1=beta_dlwtl[1,7]
 	
-	gen beta_k2=beta_dlwtl[1,8]
-	gen beta_l2=beta_dlwtl[1,9]
-	gen beta_m2=beta_dlwtl[1,10]
+		gen beta_k2=beta_dlwtl[1,8]
+		gen beta_l2=beta_dlwtl[1,9]
+		gen beta_m2=beta_dlwtl[1,10]
 
-	* "betam_tl" contains the output elasticity with respect to material inputs ("theta^m = beta_m + beta_km*k + beta_lm* l + beta_me*e + 2*beta_m2*m")
-	gen theta_m_tl = beta_m1 + beta_k1m1*k + beta_l1m1*l + 2*beta_m2*m
-	gen theta_l_tl = beta_l1 + beta_k1l1*k + beta_l1m1*m + 2*beta_l2*l
+		* Translog productivity implied by the DLW/ACF control function.
+		gen omega_TL = phi - (beta_c1 + beta_k1*k + beta_l1*l + beta_m1*m ///
+			+ beta_k1l1*k1l1 + beta_k1m1*k1m1 + beta_l1m1*l1m1 ///
+			+ beta_k2*k2 + beta_l2*l2 + beta_m2*m2)
+		gen tfp_TL = exp(omega_TL)
+		label var omega_TL "Log productivity from translog production function"
+		label var tfp_TL "TFP from translog production function"
+	
+		* "betam_tl" contains the output elasticity with respect to material inputs ("theta^m = beta_m + beta_km*k + beta_lm* l + beta_me*e + 2*beta_m2*m")
+		gen theta_m_tl = beta_m1 + beta_k1m1*k + beta_l1m1*l + 2*beta_m2*m
+		gen theta_l_tl = beta_l1 + beta_k1l1*k + beta_l1m1*m + 2*beta_l2*l
 	
 	* dLW markup
 	gen mu_DLW_TL = theta_m_tl / alpha_m
 
 }
-
 

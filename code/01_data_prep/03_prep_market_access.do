@@ -176,7 +176,7 @@ save "$geo_processed_path/pop_census_qingdao_2010.dta", replace
 
 python set exec "/opt/miniconda3/envs/bridge/bin/python"
 python script "$proj_path/code/00_setup/install_python_pkgs.py"
-python script "$proj_path/code/01_data_prep/03_market_access_func.py"
+python script "$proj_path/code/utils/03_market_access_func.py"
 
 *==================================================*
 * Step 6: Calculate market accessibility using QGIS
@@ -212,10 +212,17 @@ foreach suffix in "_model" "_reg" {
     replace town = "中韩街道" if town == "金家岭街道"
     replace town = "" if town == "金湖路街道"
     replace town = "平度外向型工业加工区" if town == "平度经济开发区"
+
+    * Multiple routing destinations can map to the same census town. Average
+    * their travel times deterministically instead of arbitrarily retaining one.
+    drop if missing(town)
+    collapse (mean) dzj dzj_prime, by(id town)
+    isid id town
+
     merge m:1 town using "$geo_processed_path/pop_census_qingdao_10", keep(3) nogen
     drop if missing(dzj, dzj_prime)
 
-    gduplicates drop id town, force
+    isid id town
     bys id: gen n = _N
     keep if n == 128
     drop n
