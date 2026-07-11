@@ -1,6 +1,6 @@
 # Code Map
 
-Last updated: 2026-07-10.
+Last updated: 2026-07-11.
 
 ## Verified Code Structure
 
@@ -75,6 +75,7 @@ Verified:
 - Calls `03_market_access_func.py`.
 - Merges with-bridge and no-bridge travel-time matrices.
 - After harmonizing town names, deterministically averages `dzj` and `dzj_prime` by firm and census town when multiple routing destinations map to the same town.
+- Carries coordinate-derived firm location town as `firm_town` in the model processed samples, keeping `town` for worker-origin towns.
 - Computes `dma = dzj - dzj_prime` and `dln_ma = ln(dma)`.
 - Saves regression data to `data/regression/processed/regression_qingdao_07_20.dta`.
 

@@ -1,6 +1,6 @@
 # Data Map
 
-Last updated: 2026-06-28.
+Last updated: 2026-07-11.
 
 The repository's `data/` directory is ignored by git but exists locally. This map records what is currently on disk and what the scripts appear to expect.
 
@@ -28,8 +28,9 @@ Uncertain:
 
 Verified:
 - `data/model/processed/firm_qingdao_model_10.dta`
-  - Current shape: 701,696 rows, 13 variables.
-  - Variables currently present: `id`, `town`, `dzj`, `dzj_prime`, `pop`, `year`, `employ`, `ind_code2`, `longitude`, `latitude`, `wage_inital`, `ind_agg`, `county`.
+  - Current shape: 701,696 rows, 14 variables.
+  - Variables currently present: `id`, `town`, `dzj`, `dzj_prime`, `pop`, `year`, `employ`, `ind_code2`, `longitude`, `latitude`, `wage_inital`, `ind_agg`, `county`, `firm_town`.
+  - `town` is the worker-origin / residence town in the commute matrix; `firm_town` is the firm's coordinate-derived location town.
   - This is the active model input loaded by `code/03_model/main.jl`.
   - It contains `ind_agg`, used as the sector nest `s(j)` in the nested-logit model code.
 

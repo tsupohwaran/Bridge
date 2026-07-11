@@ -68,15 +68,21 @@ moment_sample_label = restrict_to_reg_sample ? "matched regression sample" : "fu
 println("Model moment sample firms: ", sum(moment_firm_mask), "/", J,
     " in ", moment_sample_label)
 
-reg_full_path = joinpath(projPath, "data", "regression", "processed",
-    "regression_qingdao_07_20.dta")
-println("Loading firm-town clusters: ", reg_full_path)
-df_reg_full = DataFrame(load(reg_full_path))
-firm_town_source = df_reg_full[in.(df_reg_full.year, Ref([2010, 2012])), [:id, :town]]
-dropmissing!(firm_town_source, [:id, :town])
-firm_town_by_id = combine(groupby(firm_town_source, :id), :town => first => :firm_town)
-firm_town_lookup = Dict(row.id => row.firm_town for row in eachrow(firm_town_by_id))
-firm_town = [get(firm_town_lookup, id, missing) for id in firm_ids]
+# `town` is the worker-origin town in the firm-by-town commute matrix; `firm_town`
+# is the coordinate-derived firm-location town used for town-sector clustering.
+if "firm_town" in names(df)
+    firm_town = collect(df[1:Z:end, :firm_town])
+else
+    reg_full_path = joinpath(projPath, "data", "regression", "processed",
+        "regression_qingdao_07_20.dta")
+    println("Loading firm-town clusters: ", reg_full_path)
+    df_reg_full = DataFrame(load(reg_full_path))
+    firm_town_source = df_reg_full[in.(df_reg_full.year, Ref([2010, 2012])), [:id, :town]]
+    dropmissing!(firm_town_source, [:id, :town])
+    firm_town_by_id = combine(groupby(firm_town_source, :id), :town => first => :firm_town)
+    firm_town_lookup = Dict(row.id => row.firm_town for row in eachrow(firm_town_by_id))
+    firm_town = [get(firm_town_lookup, id, missing) for id in firm_ids]
+end
 town_ind_cluster = [ismissing(town) || ismissing(ind) ? missing : string(town, "#", ind)
     for (town, ind) in zip(firm_town, firm_ind)]
 

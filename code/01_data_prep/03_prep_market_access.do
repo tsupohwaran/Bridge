@@ -57,6 +57,8 @@ geoinpoly latitude longitude using "$geo_raw_path/shapefiles/town_coord.dta"
 ren _ID ID
 merge m:1 ID using "$geo_raw_path/shapefiles/town_db.dta", nogen
 ren (乡 县) (town county)
+ren town firm_town
+label variable firm_town "Firm location town"
 drop ID 省 市 treat geom
 
 * export final firm data

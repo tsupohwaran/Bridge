@@ -86,14 +86,19 @@ any(ismissing, firm_sector_raw) && error("Model sample must contain nonmissing i
 firm_sector = Int.(firm_sector_raw);
 firm_ind = firm_sector;
 
-# `df` is a firm-by-origin-town commute matrix, so its `town` column is not the
-# firm-location town used by Stata's cluster(town2#ind).
-df_reg_full = DataFrame(load(projPath * "/data/regression/processed/regression_qingdao_07_20.dta"));
-firm_town_source = df_reg_full[in.(df_reg_full.year, Ref([2010, 2012])), [:id, :town]];
-dropmissing!(firm_town_source, [:id, :town]);
-firm_town_by_id = combine(groupby(firm_town_source, :id), :town => first => :firm_town);
-firm_town_lookup = Dict(row.id => row.firm_town for row in eachrow(firm_town_by_id));
-firm_town = [get(firm_town_lookup, id, missing) for id in firm_ids];
+# `town` is the worker-origin town in the firm-by-town commute matrix; `firm_town`
+# is the coordinate-derived firm-location town used for town-sector clustering.
+if "firm_town" in names(df)
+    firm_town = collect(df[1:Z:end, :firm_town]);
+else
+    @warn "Model sample lacks firm_town; falling back to regression sample firm-location towns."
+    df_reg_full = DataFrame(load(projPath * "/data/regression/processed/regression_qingdao_07_20.dta"));
+    firm_town_source = df_reg_full[in.(df_reg_full.year, Ref([2010, 2012])), [:id, :town]];
+    dropmissing!(firm_town_source, [:id, :town]);
+    firm_town_by_id = combine(groupby(firm_town_source, :id), :town => first => :firm_town);
+    firm_town_lookup = Dict(row.id => row.firm_town for row in eachrow(firm_town_by_id));
+    firm_town = [get(firm_town_lookup, id, missing) for id in firm_ids];
+end;
 town_ind_cluster = [ismissing(town) || ismissing(ind) ? missing : string(town, "#", ind)
     for (town, ind) in zip(firm_town, firm_ind)];
 

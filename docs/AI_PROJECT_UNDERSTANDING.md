@@ -1,6 +1,6 @@
 # AI Project Understanding
 
-Last updated: 2026-06-28.
+Last updated: 2026-07-11.
 
 This document is an AI-readable map of the project as understood from the current repository. It is not a substitute for the paper. Statements are explicitly classified as `Verified`, `Inferred`, or `Uncertain`.
 
@@ -91,7 +91,7 @@ Inferred:
 
 Uncertain:
 - The nested sector structure allows the bridge shock to affect both sector choice probabilities and within-sector firm choice probabilities.
-- The active model input `data/model/processed/firm_qingdao_model_10.dta` contains `pop`, `dzj`, `dzj_prime`, `wage_inital`, and `ind_agg`.
+- The active model input `data/model/processed/firm_qingdao_model_10.dta` contains `pop`, `dzj`, `dzj_prime`, `wage_inital`, `ind_agg`, and coordinate-derived firm location `firm_town`.
 - Calibration targets come from empirical results written to `output/tables/calibration_moments.csv`, but local empirical code may still be updated if the preferred target estimates change.
 
 ## Current Repository State

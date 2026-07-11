@@ -1,0 +1,3 @@
+mode,eta,theta,sigma,alpha,loc_name,sample_label,n_firms,n_loc_groups,total_loc_groups,beta,se,t,mean_y,mean_abs_y,amenity_converged,amenity_iter,base_converged,base_iter,cf_converged,cf_iter
+nested_monopsony_markdown,3.0,5.0,0.25,0.8,exact_d_dprime,full_model_sample,3559,905,2820,0.004292274502634885,0.007885630941233995,0.5443159253358618,-0.4227268680370144,0.441762030223823,false,5000,true,1,true,1395
+nested_monopsony_markdown,3.0,5.0,0.25,0.8,exact_d_dprime,matched_regression_sample,1959,554,2040,0.01769263515192999,0.00909178580553618,1.946002196967352,-0.3891377967884204,0.41084312534752515,false,5000,true,1,true,1395
