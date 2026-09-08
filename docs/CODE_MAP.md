@@ -1,6 +1,6 @@
 # Code Map
 
-Last updated: 2026-07-11.
+Last updated: 2026-08-02.
 
 ## Verified Code Structure
 
@@ -53,6 +53,7 @@ Verified:
 - Cleans firm IDs/names and industry codes.
 - Keeps manufacturing sectors.
 - Constructs revenue, intermediate inputs, real capital by perpetual inventory, labor, wage, export, ownership type, and price-index-adjusted variables.
+- Retains deflated nominal investment `invest_nomi` together with perpetual-inventory capital `capital_real` in the Step 4 output `data/ctsd/temp/ctsd_07_20_step4.dta`.
 - Creates translog production-function inputs `q`, `k`, `l`, and `m`.
 - Saves markdown estimation data to `data/regression/temp/markdown_est_07_20.dta`.
 - Creates Qingdao firm panel datasets with and without social-security payments included in wages.

@@ -362,7 +362,7 @@ bys id: replace capital_real = invest_nomi if _n == 1
 bys id: replace capital_real = (1 - 0.09) * capital_real[_n - 1] + invest_nomi if _n > 1
 
 keep if n == 1 // keep observations the original sample
-keep id year capital_real
+keep id year capital_real invest_nomi
 replace capital_real = . if (capital_real <= 0)
 sort id year
 merge 1:1 id year using "$ctsd_temp_path/ctsd_07_20_step3.dta", keep(1 3) nogen
